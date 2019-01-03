@@ -1,7 +1,8 @@
 import sys
 import selenium
 import time
-from item import Item
+from entity import Item
+import pymysql
 import exception
 import mitmproxy.http
 from selenium import webdriver
@@ -21,6 +22,13 @@ class Launcher:
 
     def __init__(self):
         pass
+
+    @staticmethod
+    def connect_mysql(self):
+        return pymysql.connect(
+            user='root', password='mysql233',
+            database='ec_spider'
+        )
 
     def launch_spider(self):
         pass
@@ -45,6 +53,7 @@ class Launcher:
         if color_dom is not None and len(color_dom) != 0:
             color_title_str = color_dom[0].text  # 获取标题
             color_selected_str = color_dom[1].find_element(By.CLASS_NAME, "selected").text  # 获取已选值
+            item.spec1 = color_title_str + '=' + color_selected_str
         else:
             # 某些单一款不需要选颜色
             pass
@@ -53,27 +62,32 @@ class Launcher:
         if edition_dom is not None and len(edition_dom) != 0:
             edition_title_str = edition_dom[0].text
             edition_selected_str = edition_dom[1].find_element(By.CLASS_NAME, "selected").text
+            item.spec2 = edition_title_str + '=' + edition_selected_str
         else:
             # 说明不需要选择型号，或者说没有型号信息
             pass
         # 获取价格
-        price = self.get_jd_price(browser)
+        item.price = self.get_jd_price(browser)
         # 获取plus会员价格
-        plus_price = self.get_jd_plus_price(browser)
+        item.plus_price = self.get_jd_plus_price(browser)
         # 获取商品url
-        url = browser.current_url
+        item.url = browser.current_url
         # 领券
         ticket_dom = self.get_jd_ticket_dom(browser)
         if ticket_dom is not None and len(ticket_dom) != 0:
-            # TODO:add to data
-            pass
+            ticket_str = ''
+            for ti in ticket_dom:
+                ticket_str += ti.text + '\n'
+            item.ticket = ticket_str
         # 库存:京东不显示库存量，只有有无货之分
-        # 销量
-        sales = self.get_jd_remark(browser)
-        print(sales)
         # 快递费:京东各省价格均不同，有货情况也不同故不做记录
+        # 销量
+        item.sales_amount = self.get_jd_remark(browser)
         # 可选字段
+        # 生成所有字段
+        item.generate_all_specification()
         # 获取div id判断是否与保存字段相符，若无记录则直接保存，有可能未响应
+        print(item.__str__())
 
     def get_jd_specification_dom(self, browser: selenium.webdriver.Chrome):
         return browser.find_elements(By.XPATH, self.__jd_specification_xpath)
@@ -87,14 +101,20 @@ class Launcher:
     def get_jd_ticket_dom(self, browser: selenium.webdriver.Chrome):
         return browser.find_elements(By.XPATH, self.__jd_ticket_xpath)
 
-    def get_jd_remark(self, browser: selenium.webdriver.Chrome):
+    def get_jd_remark(self, browser: selenium.webdriver.Chrome) -> str:
         return browser.find_element(By.XPATH, self.__jd_remark_xpath).text[1: -2]
 
-    def get_jd_price(self, browser: selenium.webdriver.Chrome) -> str:
-        return browser.find_element(By.XPATH, self.__jd_price_xpath).text
+    def get_jd_price(self, browser: selenium.webdriver.Chrome) -> float:
+        try:
+            return float(browser.find_element(By.XPATH, self.__jd_price_xpath).text)
+        except ValueError:
+            return -1
 
-    def get_jd_plus_price(self, browser: selenium.webdriver.Chrome) -> str:
-        return browser.find_element(By.XPATH, self.__jd_plus_price_xpath).text[1:]
+    def get_jd_plus_price(self, browser: selenium.webdriver.Chrome) -> float:
+        try:
+            return float(browser.find_element(By.XPATH, self.__jd_plus_price_xpath).text[1:])
+        except ValueError:
+            return -1
 
     def access_taobao(self, browser: selenium.webdriver.Chrome):
         # 淘宝
@@ -130,7 +150,7 @@ if __name__ == '__main__':
     options.add_argument("disable-cache")
     ##############
     chrome = webdriver.Chrome()
-    chrome.get('http://item.jd.com/28252543502.html#none')
+    chrome.get('https://item.jd.com/35165938134.html')
     laun = Launcher()
     laun.get_jd_specification(chrome)
     time.sleep(10)
@@ -138,3 +158,4 @@ if __name__ == '__main__':
 
 # http://item.jd.com/20742438990.html # 只有商品颜色选择
 # http://item.jd.com/28252543502.html # 优惠券
+# https://item.jd.com/35165938134.html # plus

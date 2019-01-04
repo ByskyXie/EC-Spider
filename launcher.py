@@ -1,9 +1,12 @@
 import sys
 import selenium
+import hashlib
 import time
+import logging
 from entity import Commodity
 from entity import Item
 import pymysql
+import traceback
 import exception
 import mitmproxy.http
 from selenium import webdriver
@@ -24,47 +27,90 @@ class Launcher:
     __jd_item_type_xpath = "//div[@class=\'crumb fl clearfix\']"  # 商品类别
     __jd_store_name_xpath = "//div[@class=\'contact fr clearfix\']//div[@class=\'name\']/a"  # 店铺名
 
-    __sql_insert_item = "INSERT INTO ITEM() VALUE = ();"
-    __sql_insert_commodity = "" \
-                             "INSERT INTO COMMODITY(item_url, item_title, item_name," \
-                             "item_type, store_name, store_url) " \
-                             "VALUE = ('%s','%s','%s','%s','%s','%s');"
+    __sql_insert_item = "INSERT INTO ITEM(item_url_md5,item_url,data_date,item_price," \
+                        "plus_price, ticket, inventory, sales_amount, transport_fare," \
+                        "all_specification, spec1, spec2, spec3, spec4, spec5, spec_other) " \
+                        "VALUE ('%s','%s',%f,%f,%f,'%s',%d,'%s',%f" \
+                        ",'%s','%s','%s','%s','%s','%s','%s');"
+    __sql_insert_commodity = "INSERT INTO COMMODITY(item_url_md5,item_url, item_title," \
+                             "item_name, item_type, store_name, store_url) " \
+                             "VALUE ('%s','%s','%s','%s','%s','%s','%s');"
+    __sql_query_commodity = "SELECT * FROM commodity WHERE item_url_md5='%s';"
+    __sql_query_item = "SELECT * FROM item WHERE item_url_md5='%s' and data_date=%f;"
+
+    __connection = None
 
     def __init__(self):
         pass
 
-    @staticmethod
-    def connect_mysql():
-        return pymysql.connect(
-            user='root', password='mysql233',
-            database='ec_spider'
-        )
+    def connect_mysql(self):
+        if self.__connection is None:
+            self.__connection = pymysql.connect(
+                user='root', password='mysql233', charset='utf8',
+                database='ec_spider', use_unicode=True
+            )
+        return self.__connection
+
+    def launch_spider(self):
+        pass
 
     def insert_commodity(self, connect: pymysql.connections.Connection, commodity: Commodity):
         if type(commodity) != Commodity:
             return
+        # 检查是否存在,是的话跳过
+        if self.is_commodity_exist(connect, commodity.item_url_md5):
+            logging.info('Url_md5:', commodity.item_url_md5, ' existed in database.')
+            return
         cursor = connect.cursor()
-        # try:
-        cursor.execute(self.__sql_insert_commodity % (
-            commodity.item_url, commodity.item_title, commodity.item_name,
-            commodity.item_type, commodity.store_name, commodity.store_url
-        ))
-        connect.commit()
-        # except:
-        #     raise
-        # finally:
-        #     cursor.close()
-        #     connect.close()
+        try:
+            cursor.execute(self.__sql_insert_commodity % (
+                commodity.item_url_md5, commodity.item_url, commodity.item_title, commodity.item_name,
+                commodity.item_type, commodity.store_name, commodity.store_url
+            ))
+            connect.commit()
+        except Exception:
+            traceback.print_exc()
+            raise
+        finally:
+            cursor.close()
 
-    def launch_spider(self):
-        pass
+    def insert_item(self, connect: pymysql.connections.Connection, item: Item):
+        if type(item) != Item:
+            return
+        if self.is_item_exist(connect, item):
+            logging.info('Url_md5:', item.item_url_md5, ' Data_date:', item.data_date, ' existed in database.')
+            return
+        cursor = connect.cursor()
+        try:
+            cursor.execute(self.__sql_insert_item % (
+                item.item_url_md5, item.url, item.data_date, item.price, item.plus_price, item.ticket,
+                item.inventory, item.sales_amount, item.transport_fare, item.all_specification,
+                item.spec1, item.spec2, item.spec3, item.spec4, item.spec5, item.spec_other
+            ))
+            connect.commit()
+        except Exception:
+            traceback.print_exc()
+            raise
+        finally:
+            cursor.close()
+
+    def is_commodity_exist(self, connect: pymysql.connections.Connection, commodity_md5: str) -> bool:
+        if connect.query(self.__sql_query_commodity % (commodity_md5,)) > 0:
+            return True
+        return False
+
+    def is_item_exist(self, connect: pymysql.connections.Connection, item: Item) -> bool:
+        if connect.query(self.__sql_query_item % (item.item_url_md5, item.data_date)) > 0:
+            return True
+        return False
 
     '''
         function: hide selenium features and then pass the spider detection.
         param: browser is an instance of browser which includes Chrome/Edge/FireFox etc.
     '''
 
-    def anti_detected_initial(self, browser: selenium.webdriver.Chrome):
+    @staticmethod
+    def anti_detected_initial(browser: selenium.webdriver.Chrome):
         browser.execute_script("""
             if (navigator.webdriver) {
                 navigator.webdrivser = false;
@@ -211,13 +257,16 @@ if __name__ == '__main__':
     options.add_argument("disable-cache")
     ##############
     chrome = webdriver.Chrome()
-    chrome.get('https://item.jd.com/35165938134.html')
+    chrome.get('https://item.jd.com/8735304.html#none')
     comm = laun.get_jd_commodity(chrome)
+    item = laun.get_jd_item(chrome)
     conn = laun.connect_mysql()
     laun.insert_commodity(conn, comm)
+    laun.insert_item(conn, item)
     time.sleep(10)
     chrome.close()
 
+# https://item.jd.com/8735304.html#none
 # http://item.jd.com/20742438990.html # 只有商品颜色选择
 # http://item.jd.com/28252543502.html # 优惠券
 # https://item.jd.com/35165938134.html # plus

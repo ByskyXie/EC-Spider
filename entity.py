@@ -1,17 +1,23 @@
 import time
+import hashlib
 from typing import Any
 
 
 class Commodity:
+    __item_url_md5 = ''
     __item_url = ''
     __item_title = ''
     __item_name = ''
-    item_type = None
+    item_type = ''
     __store_name = ''
     __store_url = ''
 
     def __init__(self) -> None:
         super().__init__()
+
+    @property
+    def item_url_md5(self) -> str:
+        return self.__item_url_md5
 
     @property
     def item_url(self) -> str:
@@ -20,6 +26,7 @@ class Commodity:
     @item_url.setter
     def item_url(self, value: str):
         self.__item_url = str(value).strip()
+        self.__item_url_md5 = hashlib.md5(self.__item_url.encode('utf-8')).hexdigest()
 
     @property
     def item_title(self) -> str:
@@ -64,21 +71,22 @@ class Commodity:
 
 
 class Item:
+    __item_url_md5 = ''
     __item_url = ''
     __item_price = -1.0
     __plus_price = -1.0
     __ticket = ''
-    inventory = None
+    inventory = -1
     __data_date = time.time()
     __sales_amount = ''
-    __transport_fare = None
+    __transport_fare = -1
     __all_specification = ''
-    __spec1 = None
-    __spec2 = None
-    spec3 = None
-    spec4 = None
-    spec5 = None
-    spec_other = None
+    __spec1 = ''
+    __spec2 = ''
+    spec3 = ''
+    spec4 = ''
+    spec5 = ''
+    spec_other = ''
 
     def __init__(self):
         pass
@@ -86,18 +94,22 @@ class Item:
     def generate_all_specification(self):
         all_str = ''
         if self.spec1 is not None and len(self.spec1.strip()) > 0:
-            all_str += self.spec1.strip()
+            all_str += self.spec1.strip().replace('\n', '\\n')
         if self.spec2 is not None and len(self.spec2.strip()) > 0:
-            all_str += '\n' + self.spec2.strip()
+            all_str += '\\n' + self.spec2.strip().replace('\n', '\\n')
         if self.spec3 is not None and len(self.spec3.strip()) > 0:
-            all_str += '\n' + self.spec3.strip()
+            all_str += '\\n' + self.spec3.strip().replace('\n', '\\n')
         if self.spec4 is not None and len(self.spec4.strip()) > 0:
-            all_str += '\n' + self.spec4.strip()
+            all_str += '\\n' + self.spec4.strip().replace('\n', '\\n')
         if self.spec5 is not None and len(self.spec5.strip()) > 0:
-            all_str += '\n' + self.spec5.strip()
+            all_str += '\\n' + self.spec5.strip().replace('\n', '\\n')
         if self.spec_other is not None and len(self.spec_other.strip()) > 0:
-            all_str += '\n' + self.spec_other.strip()
+            all_str += '\\n' + self.spec_other.strip().replace('\n', '\\n')
         self.__all_specification = all_str
+
+    @property
+    def item_url_md5(self) -> str:
+        return self.__item_url_md5
 
     @property
     def url(self) -> str:
@@ -105,7 +117,8 @@ class Item:
 
     @url.setter
     def url(self, value: str):
-        self.__item_url = str(value).strip()
+        self.__item_url = str(value).strip().replace('\n', '')
+        self.__item_url_md5 = hashlib.md5(self.__item_url.encode('utf-8')).hexdigest()
 
     @property
     def price(self) -> float:
@@ -135,7 +148,7 @@ class Item:
     def ticket(self, value: str):
         if type(value) != str:
             return
-        self.__ticket = value.strip()
+        self.__ticket = value.strip().replace('\n', '\\n')
 
     @property
     def data_date(self) -> time:
@@ -153,7 +166,7 @@ class Item:
 
     @sales_amount.setter
     def sales_amount(self, value: str):
-        self.__sales_amount = str(value).strip()
+        self.__sales_amount = str(value).strip().replace('\n', '')
 
     @property
     def transport_fare(self) -> float:
@@ -177,7 +190,7 @@ class Item:
     def spec1(self, value: str):
         if type(value) != str:
             return
-        self.__spec1 = value.strip()
+        self.__spec1 = value.strip().replace('\n', '\\n')
 
     @property
     def spec2(self) -> str:
@@ -187,7 +200,7 @@ class Item:
     def spec2(self, value: str):
         if type(value) != str:
             return
-        self.__spec2 = value.strip()
+        self.__spec2 = value.strip().replace('\n', '\\n')
 
     def get_str_time(self):
         time_array = time.localtime(self.__data_date)

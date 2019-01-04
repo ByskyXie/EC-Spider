@@ -1,6 +1,7 @@
 import sys
 import selenium
 import time
+from entity import Commodity
 from entity import Item
 import pymysql
 import exception
@@ -19,16 +20,41 @@ class Launcher:
     __jd_plus_price_xpath = "//span[@class=\'p-price-plus\']/span[@*]"  # plus会员价
     __jd_ticket_xpath = "//div[@id=\'summary-quan\']//span[@class=\'quan-item\']"  # 优惠券
     __jd_remark_xpath = "//li[contains(text(),\'商品评价\')]/*"  # 商品评价
+    __jd_item_name_xpath = "//div[@class=\'sku-name\']"  # 商品名称
+    __jd_item_type_xpath = "//div[@class=\'crumb fl clearfix\']"  # 商品类别
+    __jd_store_name_xpath = "//div[@class=\'contact fr clearfix\']//div[@class=\'name\']/a"  # 店铺名
+
+    __sql_insert_item = "INSERT INTO ITEM() VALUE = ();"
+    __sql_insert_commodity = "" \
+                             "INSERT INTO COMMODITY(item_url, item_title, item_name," \
+                             "item_type, store_name, store_url) " \
+                             "VALUE = ('%s','%s','%s','%s','%s','%s');"
 
     def __init__(self):
         pass
 
     @staticmethod
-    def connect_mysql(self):
+    def connect_mysql():
         return pymysql.connect(
             user='root', password='mysql233',
             database='ec_spider'
         )
+
+    def insert_commodity(self, connect: pymysql.connections.Connection, commodity: Commodity):
+        if type(commodity) != Commodity:
+            return
+        cursor = connect.cursor()
+        # try:
+        cursor.execute(self.__sql_insert_commodity % (
+            commodity.item_url, commodity.item_title, commodity.item_name,
+            commodity.item_type, commodity.store_name, commodity.store_url
+        ))
+        connect.commit()
+        # except:
+        #     raise
+        # finally:
+        #     cursor.close()
+        #     connect.close()
 
     def launch_spider(self):
         pass
@@ -46,7 +72,26 @@ class Launcher:
                 Object.defineProperty(navigator, 'webdriver', {get: () => false,});//改为Headless=false
             }""")
 
-    def get_jd_specification(self, browser: selenium.webdriver.Chrome):
+    def get_jd_commodity(self, browser: selenium.webdriver.Chrome) -> Commodity:
+        comm = Commodity()
+        # 获取商品url
+        comm.item_url = browser.current_url
+        # 获取商品title
+        comm.item_title = browser.title
+        # 获取商品name
+        comm.item_name = self.get_jd_item_name(browser)
+        # 获取商品分类
+        comm.item_type = self.get_jd_item_type(browser)
+        # 获取店铺url
+        comm.store_url = self.get_jd_store_url(browser)
+        # 获取店铺名
+        comm.store_name = self.get_jd_store_name(browser)
+        return comm
+
+    def save_jd_commodity(self, comm: Commodity):
+        pass
+
+    def get_jd_item(self, browser: selenium.webdriver.Chrome) -> Item:
         item = Item()
         # 获取颜色标题及所选项目值
         color_dom = self.get_jd_color_dom(browser)
@@ -86,8 +131,23 @@ class Launcher:
         # 可选字段
         # 生成所有字段
         item.generate_all_specification()
-        # 获取div id判断是否与保存字段相符，若无记录则直接保存，有可能未响应
-        print(item.__str__())
+        return item
+
+    def save_jd_item(self, item: Item):
+        # 有可能未响应/无货/链接无效
+        pass
+
+    def get_jd_store_name(self, browser: selenium.webdriver.Chrome) -> str:
+        return browser.find_element(By.XPATH, self.__jd_store_name_xpath).text.strip()
+
+    def get_jd_store_url(self, browser: selenium.webdriver.Chrome) -> str:
+        return browser.find_element(By.XPATH, self.__jd_store_name_xpath).get_attribute('href')
+
+    def get_jd_item_name(self, browser: selenium.webdriver.Chrome) -> str:
+        return browser.find_element(By.XPATH, self.__jd_item_name_xpath).text.strip()
+
+    def get_jd_item_type(self, browser: selenium.webdriver.Chrome) -> str:
+        return browser.find_element(By.XPATH, self.__jd_item_type_xpath).text.strip()
 
     def get_jd_specification_dom(self, browser: selenium.webdriver.Chrome):
         return browser.find_elements(By.XPATH, self.__jd_specification_xpath)
@@ -146,13 +206,15 @@ class Launcher:
 
 
 if __name__ == '__main__':
+    laun = Launcher()
     options = webdriver.ChromeOptions()  # chrome设置
     options.add_argument("disable-cache")
     ##############
     chrome = webdriver.Chrome()
     chrome.get('https://item.jd.com/35165938134.html')
-    laun = Launcher()
-    laun.get_jd_specification(chrome)
+    comm = laun.get_jd_commodity(chrome)
+    conn = laun.connect_mysql()
+    laun.insert_commodity(conn, comm)
     time.sleep(10)
     chrome.close()
 

@@ -1,0 +1,5 @@
+<script>
+    Object.defineProperty(navigator, 'webdriver', {get: () => false,});
+    window.chrome.runtime = {};
+    Object.defineProperty(navigator, 'languages', {get: function() {return ["en-US", "en", "es"];}});
+</script>

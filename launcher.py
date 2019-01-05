@@ -34,12 +34,14 @@ class Launcher:
     '''
     @staticmethod
     def anti_detected_initial(browser: selenium.webdriver.Chrome):
-        browser.execute_script("""
-            if (navigator.webdriver) {
-                navigator.webdrivser = false;
-                delete navigator.webdrivser;
-                Object.defineProperty(navigator, 'webdriver', {get: () => false,});//改为Headless=false
-            }""")
+        strategy = open('anti_detect_strategy.js', 'r')
+        str_script = strategy.readline()
+        while True:
+            i = strategy.readline()
+            if len(i) == 0:
+                break
+            str_script += i
+        browser.execute_script(str_script)
 
     """
         method: 
@@ -47,10 +49,15 @@ class Launcher:
         param:
             chrome: Instance of selenium.webdriver.Chrome.
     """
-    def chrome_option_initial(self, chrome: selenium.webdriver.Chrome):
-        # TODO:无图模式
+    def chrome_option_initial(self, browser: selenium.webdriver.Chrome):
+        # 无图模式 #1允许所有图片；2阻止所有图片；3阻止第三方服务器图片
+        prefs = {'profile.default_content_setting_values':
+            {'images': 2}}
         options = webdriver.ChromeOptions()  # chrome设置
+        options.add_experimental_option('prefs', prefs)
         options.add_argument("disable-cache")
+        browser.set_page_load_timeout(10)  # 等待10秒
+
 
     def access_taobao(self, browser: selenium.webdriver.Chrome):
         # 淘宝
@@ -335,9 +342,15 @@ if __name__ == '__main__':
     laun = Launcher()
     helper = DatabaseHelper()
     jddr = JdDetailPageReader()
-    # ############# 当初的少年怎么也不会想到
     chrome = webdriver.Chrome()
-    chrome.get('https://item.jd.com/8735304.html#none')
+    laun.chrome_option_initial(chrome)
+    # ############# 当初的少年怎么也不会想到
+    laun.anti_detected_initial(chrome)
+    try:
+        chrome.get('https://item.jd.com/8735304.html#none')
+    except TimeoutError:
+        logging.warning('Browser timeout!')
+        traceback.print_exc()
     comm = jddr.get_jd_commodity_from_detail_page(chrome)
     item = jddr.get_jd_item_from_detail_page(chrome)
     helper.insert_commodity(comm)

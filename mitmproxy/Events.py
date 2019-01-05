@@ -85,13 +85,15 @@ class Events:
                 print('Contain:', feature, end='\n------------------------\n')
                 flow.response.content = flow.response.content.replace(feature.encode('UTF-8'),
                     'anti_'.encode('UTF-8')+feature.encode('UTF-8'))
-        # 注入script
+        # TODO:读取mitm策略并注入script
         flow.response.content = flow.response.content.replace('<script>'.encode('UTF-8'),
             '''
-            <script>\nObject.defineProperty(navigator, \'webdriver\', {get: () => false,});\n
-            window.chrome.runtime = {};\n
-            Object.defineProperty(navigator, "languages", {get: function() {return ["en-US", "en", "es"];}});\n
-            </script>\n<script>
+            <script>
+                Object.defineProperty(navigator, 'webdriver', {get: () => false,});
+                window.chrome.runtime = {};
+                Object.defineProperty(navigator, "languages", {get: function() {return ["en-US", "en", "es"];}});\n
+            </script>
+            <script>
             '''.encode('UTF-8'), 1)
         # 获取商品url
 

@@ -1,16 +1,15 @@
 import sys
-import selenium
-import hashlib
 import time
+import hashlib
 import logging
-from entity import Commodity
-from entity import Item
 import pymysql
+import selenium
 import traceback
 import exception
 import mitmproxy.http
+from entity import Item
+from entity import Commodity
 from selenium import webdriver
-from selenium.webdriver.remote.webelement import WebElement
 from selenium.webdriver.common.by import By
 
 
@@ -41,15 +40,27 @@ class Launcher:
     __connection = None
 
     def __init__(self):
-        pass
+        __connection = self.get_mysql_connect()
 
-    def connect_mysql(self):
+    def __del__(self):
+        if self.__connection is not None and self.__is_mysql_connect_valid(self.__connection):
+            self.__connection.close()  # 关闭连接
+
+    def get_mysql_connect(self) -> pymysql.connections.Connection:
         if self.__connection is None:
             self.__connection = pymysql.connect(
                 user='root', password='mysql233', charset='utf8',
                 database='ec_spider', use_unicode=True
             )
+        self.__connection.ping(True)  # 防止之前关闭，重新连接
         return self.__connection
+
+    def __is_mysql_connect_valid(self, connect: pymysql.connections.Connection) -> bool:
+        try:
+            connect.ping(False)
+        except pymysql.err.Error:
+            return False
+        return True
 
     def launch_spider(self):
         pass
@@ -119,6 +130,7 @@ class Launcher:
             }""")
 
     def get_jd_commodity(self, browser: selenium.webdriver.Chrome) -> Commodity:
+        # TODO:有可能未响应/无货/链接无效
         comm = Commodity()
         # 获取商品url
         comm.item_url = browser.current_url
@@ -134,10 +146,8 @@ class Launcher:
         comm.store_name = self.get_jd_store_name(browser)
         return comm
 
-    def save_jd_commodity(self, comm: Commodity):
-        pass
-
     def get_jd_item(self, browser: selenium.webdriver.Chrome) -> Item:
+        # TODO:有可能未响应/无货/链接无效
         item = Item()
         # 获取颜色标题及所选项目值
         color_dom = self.get_jd_color_dom(browser)
@@ -178,10 +188,6 @@ class Launcher:
         # 生成所有字段
         item.generate_all_specification()
         return item
-
-    def save_jd_item(self, item: Item):
-        # 有可能未响应/无货/链接无效
-        pass
 
     def get_jd_store_name(self, browser: selenium.webdriver.Chrome) -> str:
         return browser.find_element(By.XPATH, self.__jd_store_name_xpath).text.strip()
@@ -260,10 +266,12 @@ if __name__ == '__main__':
     chrome.get('https://item.jd.com/8735304.html#none')
     comm = laun.get_jd_commodity(chrome)
     item = laun.get_jd_item(chrome)
-    conn = laun.connect_mysql()
+    conn = laun.get_mysql_connect()
     laun.insert_commodity(conn, comm)
     laun.insert_item(conn, item)
     time.sleep(10)
+    conn.close()
+    print(conn.ping(False), type(conn.ping(False)))
     chrome.close()
 
 # https://item.jd.com/8735304.html#none

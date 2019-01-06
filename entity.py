@@ -9,6 +9,7 @@ class Commodity:
     __item_title = ''
     __item_name = ''
     item_type = ''
+    __keyword = ''
     __store_name = ''
     __store_url = ''
 
@@ -45,6 +46,16 @@ class Commodity:
         self.__item_name = str(value).strip()
 
     @property
+    def keyword(self) -> str:
+        return self.__keyword
+
+    @keyword.setter
+    def keyword(self, value: str):
+        if type(value) is not str:
+            return
+        self.__keyword = value.strip()
+
+    @property
     def store_name(self) -> str:
         return self.__store_name
 
@@ -60,14 +71,10 @@ class Commodity:
     def store_url(self, value: str):
         self.__store_url = str(value).strip()
 
-    @item_name.setter
-    def item_name(self, value: str):
-        self.__item_name = str(value).strip()
-
     def __str__(self) -> str:
-        return '[Title]:' + self.item_title + '\n[Url]:' + self.item_url + \
-               '\n[Store]:' + self.store_name + '\n[Url]:' + self.store_url + \
-               '\n[Type]:'+self.item_type
+        return '[MD5]:' + self.item_url_md5 + '[Title]:' + self.item_title + '\n[Url]:' \
+               + self.item_url + '\n[Keyword]:' + self.keyword + '\n[Store]:' + self.store_name \
+               + '\n[Url]:' + self.store_url + '\n[Type]:' + self.item_type
 
 
 class Item:
@@ -77,7 +84,8 @@ class Item:
     __plus_price = -1.0
     __ticket = ''
     inventory = -1
-    __data_date = time.time()
+    __data_begin_time = time.time()
+    __data_end_time = time.time()
     __sales_amount = ''
     __transport_fare = -1
     __all_specification = ''
@@ -151,14 +159,24 @@ class Item:
         self.__ticket = value.strip().replace('\n', '\\n')
 
     @property
-    def data_date(self) -> time:
-        return self.__data_date
+    def data_begin_time(self) -> time:
+        return self.__data_begin_time
 
-    @data_date.setter
-    def data_date(self, value: time):
+    @data_begin_time.setter
+    def data_begin_time(self, value: time):
         if type(value) != float:
             return
-        self.__data_date = value
+        self.__data_begin_time = value
+
+    @property
+    def data_end_time(self) -> time:
+        return self.__data_end_time
+
+    @data_end_time.setter
+    def data_end_time(self, value: time):
+        if type(value) != float:
+            return
+        self.__data_end_time = value
 
     @property
     def sales_amount(self) -> str:
@@ -202,12 +220,47 @@ class Item:
             return
         self.__spec2 = value.strip().replace('\n', '\\n')
 
-    def get_str_time(self):
-        time_array = time.localtime(self.__data_date)
+    def get_str_begin_time(self):
+        time_array = time.localtime(self.__data_begin_time)
+        return time.strftime("%Y-%m-%d %H:%M:%S", time_array)
+
+    def get_str_end_time(self):
+        time_array = time.localtime(self.__data_end_time)
         return time.strftime("%Y-%m-%d %H:%M:%S", time_array)
 
     def __str__(self) -> str:
-        return self.url + '\n[price]:' + self.price.__str__() + '\t' + self.plus_price.__str__() + \
-               '\n[ticket]:\n' + self.ticket + '\n[inventory]:' + self.inventory.__str__() + '\n[time]:' + \
-               self.get_str_time() + '\n[sales]:' + self.sales_amount.__str__() + '\n[transport]:' + \
-               self.transport_fare.__str__() + '\n[speci]:' + self.all_specification
+        return self.url + '\n[price]:' + self.price.__str__() + '\t' + self.plus_price.__str__() + '\n[ticket]:\n' \
+               + self.ticket + '\n[inventory]:' + self.inventory.__str__() + '\n[time]:' + self.get_str_begin_time() \
+               + ' -> ' + self.get_str_end_time() + '\n[sales]:' + self.sales_amount.__str__() + '\n[transport]:' \
+               + self.transport_fare.__str__() + '\n[speci]:' + self.all_specification
+
+
+class Keyword:
+    __keyword = ''
+    __update_time = -1.0
+
+    def __init__(self) -> None:
+        super().__init__()
+
+    @property
+    def keyword(self) -> str:
+        return self.__keyword
+
+    @keyword.setter
+    def keyword(self, value: str):
+        if type(value) is not str:
+            return
+        self.__keyword = str(value).strip()
+
+    @property
+    def update_time(self) -> float:
+        return self.__update_time
+
+    @update_time.setter
+    def update_time(self, value: float):
+        if type(value) is not float and type(value) is not int:
+            return
+        self.__update_time = float(value)
+
+    def __str__(self) -> str:
+        return '[keyword]:' + self.keyword + '\n[update time]:' + self.update_time.__str__()

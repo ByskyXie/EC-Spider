@@ -16,8 +16,10 @@ class SpecNotFoundException(Exception):
         return super().__new__(cls)
 
 
-
 class GetUrlFailedException(Exception):
 
     def __init__(self, *args: object) -> None:
         super().__init__(*args)
+
+
+

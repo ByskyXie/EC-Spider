@@ -4,24 +4,24 @@ from typing import Any
 
 
 class Commodity:
-    __item_url_md5 = ''
-    __item_url = ''
-    __item_title = ''
-    __item_name = ''
+    __item_url_md5 = None
+    __item_url = None
+    __item_title = None
+    __item_name = None
     item_type = ''
-    __keyword = ''
-    __store_name = ''
-    __store_url = ''
+    __keyword = None
+    __store_name = None
+    __store_url = None
 
     def __init__(self) -> None:
         super().__init__()
 
     @property
-    def item_url_md5(self) -> str:
+    def item_url_md5(self) -> (str, None):
         return self.__item_url_md5
 
     @property
-    def item_url(self) -> str:
+    def item_url(self) -> (str, None):
         return self.__item_url
 
     @item_url.setter
@@ -30,7 +30,7 @@ class Commodity:
         self.__item_url_md5 = hashlib.md5(self.__item_url.encode('utf-8')).hexdigest()
 
     @property
-    def item_title(self) -> str:
+    def item_title(self) -> (str, None):
         return self.__item_title
 
     @item_title.setter
@@ -38,7 +38,7 @@ class Commodity:
         self.__item_title = str(value).strip()
 
     @property
-    def item_name(self) -> str:
+    def item_name(self) -> (str, None):
         return self.__item_name
 
     @item_name.setter
@@ -46,7 +46,7 @@ class Commodity:
         self.__item_name = str(value).strip()
 
     @property
-    def keyword(self) -> str:
+    def keyword(self) -> (str, None):
         return self.__keyword
 
     @keyword.setter
@@ -56,7 +56,7 @@ class Commodity:
         self.__keyword = value.strip()
 
     @property
-    def store_name(self) -> str:
+    def store_name(self) -> (str, None):
         return self.__store_name
 
     @store_name.setter
@@ -64,7 +64,7 @@ class Commodity:
         self.__store_name = str(value).strip()
 
     @property
-    def store_url(self) -> str:
+    def store_url(self) -> (str, None):
         return self.__store_url
 
     @store_url.setter
@@ -78,8 +78,8 @@ class Commodity:
 
 
 class Item:
-    __item_url_md5 = ''
-    __item_url = ''
+    __item_url_md5 = None
+    __item_url = None
     __item_price = -1.0
     __plus_price = -1.0
     __ticket = ''
@@ -116,11 +116,11 @@ class Item:
         self.__all_specification = all_str
 
     @property
-    def item_url_md5(self) -> str:
+    def item_url_md5(self) -> (str, None):
         return self.__item_url_md5
 
     @property
-    def url(self) -> str:
+    def url(self) -> (str, None):
         return self.__item_url
 
     @url.setter

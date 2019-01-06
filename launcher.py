@@ -12,6 +12,7 @@ from entity import Commodity
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.common.exceptions import TimeoutException
+from selenium.webdriver.remote.webelement import WebElement
 
 
 class Launcher:
@@ -19,65 +20,70 @@ class Launcher:
     def __init__(self) -> None:
         super().__init__()
 
-    """
-        method: 
-            The EC-Spider's entrance. you could selected scratch TaoBao/Tmall or jd.
-    """
-
     def launch_spider(self, browser: selenium.webdriver.Chrome, **ec_list):
+        """
+        method:
+            The EC-Spider's entrance. you could selected scratch TaoBao/Tmall or jd.
+        :param browser:
+        :param ec_list:
+        :return:
+        """
         # TODO:初始化
-        self.chrome_option_initial(browser)
-
-    '''
-        method: 
-            hide selenium features and then pass the spider detection.
-        param: 
-            browser is an instance of browser which includes Chrome/Edge/FireFox etc.
-    '''
+        with webdriver.Chrome(self.chrome_option_initial()) as chrome:
+            pass
 
     @staticmethod
     def anti_detected_initial(browser: selenium.webdriver.Chrome):
-        strategy = open('anti_detect_strategy.js', 'r')
-        str_script = strategy.readline()
-        while True:
-            i = strategy.readline()
-            if len(i) == 0:
-                break
-            str_script += i
+        """
+        method:
+            hide selenium features and then pass the spider detection.
+        :param
+            browser is an instance of browser which includes Chrome/Edge/FireFox etc.
+        :return:
+        """
+        with open('anti_detect_strategy.js', 'r') as strategy:
+            str_script = strategy.readline()
+            while True:
+                i = strategy.readline()
+                if len(i) == 0:
+                    break
+                str_script += i
         browser.execute_script(str_script)
 
-    """
-        method: 
+    @staticmethod
+    def chrome_option_initial() -> webdriver.ChromeOptions:
+        """
+        method:
             Before launch spider, set chrome option to accelerate the speed.
-        param:
-            chrome: Instance of selenium.webdriver.Chrome.
-    """
-
-    def chrome_option_initial(self) -> webdriver.ChromeOptions:
+        :return:
+        """
         # 无图模式 #1允许所有图片；2阻止所有图片；3阻止第三方服务器图片
-        prefs = {'profile.default_content_setting_values':
-                     {'images': 2}}
+        prefs = {'profile.default_content_setting_values': {'images': 2}}
         options = webdriver.ChromeOptions()  # chrome设置
         options.add_experimental_option('prefs', prefs)
         options.add_argument("disable-cache")
+        # 启动浏览器的时候不想看的浏览器运行，那就加载浏览器的静默模式，让它在后台偷偷运行。用headless
+        # option.add_argument('headless')
         return options
 
-    def access_taobao(self, browser: selenium.webdriver.Chrome):
+    @staticmethod
+    def access_taobao(browser: selenium.webdriver.Chrome):
         # 淘宝
         browser.get('http://www.taobao.com')
-        input = browser.find_element(By.ID, 'q')
-        input.send_keys('U盘')
+        input_view = browser.find_element(By.ID, 'q')
+        input_view.send_keys('U盘')
         button = browser.find_element(By.CLASS_NAME, 'search-button').find_element(By.TAG_NAME, 'button')
         if button is None:
             print('Get button failed')
         else:
             button.click()
 
-    def access_jd(self, browser: selenium.webdriver.Chrome):
+    @staticmethod
+    def access_jd(browser: selenium.webdriver.Chrome):
         # 京东
         browser.get('http://www.jd.com')
-        input = browser.find_element(By.ID, 'key')
-        input.send_keys('U盘')
+        input_view = browser.find_element(By.ID, 'key')
+        input_view.send_keys('U盘')
         button = browser.find_element(By.XPATH, '//*[@class=\'search-m\']').find_element(By.CLASS_NAME, 'button')
         browser.execute_script("""   
             if (navigator.webdriver) {
@@ -110,46 +116,48 @@ class JdDetailPageReader:
     def __init__(self) -> None:
         super().__init__()
 
-    """
-        method: 
-            Rely the supplied jd commodity detail page. the method format read in info and then return a 
+    def get_jd_commodity_from_detail_page(self, browser: selenium.webdriver.Chrome) -> (Commodity, None):
+        """
+        method:
+            Rely the supplied jd commodity detail page. the method format read in info and then return a
             commodity instance.
-        param: 
-            browser: an instance of browser which includes Chrome/Edge/FireFox etc. 
+        :param
+            browser: an instance of browser which includes Chrome/Edge/FireFox etc.
             cautiously, the browser current page must be a commodity page.
-    """
-
-    def get_jd_commodity_from_detail_page(self, browser: selenium.webdriver.Chrome) -> Commodity:
+        :return:
+        """
         # TODO:判断是否是详情页，且有可能长时间未响应/无货/链接无效
         comm = Commodity()
         # 获取商品url,可能失败
         try:
             comm.item_url = browser.current_url
         except TimeoutException as err:
-            print('Get url failed! at method:JdDetailReader.get_jd_commodity_from_detail_page()')
-            raise exception.GetUrlFailedException
+            logging.warning('Get url failed! at method:JdDetailReader.get_jd_commodity_from_detail_page()')
+            return None
         # 获取商品title
         comm.item_title = browser.title
         # 获取商品name
         comm.item_name = self.get_jd_item_name_from_detail_page(browser)
         # 获取商品分类
         comm.item_type = self.get_jd_item_type_from_detail_page(browser)
+        # keyword 从分类中截取
+        comm.keyword = comm.item_type[0: comm.item_type.index('>')]
         # 获取店铺url
         comm.store_url = self.get_jd_store_url_from_detail_page(browser)
         # 获取店铺名
         comm.store_name = self.get_jd_store_name_from_detail_page(browser)
         return comm
 
-    """
-        method: 
-            Rely the supplied jd item detail page. the method format read in info and then return a 
+    def get_jd_item_from_detail_page(self, browser: selenium.webdriver.Chrome) -> (Item, None):
+        """
+        method:
+            Rely the supplied jd item detail page. the method format read in info and then return a
             item instance.
-        param: 
-            browser: an instance of browser which includes Chrome/Edge/FireFox etc. 
+        :param
+            browser: an instance of browser which includes Chrome/Edge/FireFox etc.
             cautiously, the browser current page must be a commodity detail page.
-    """
-
-    def get_jd_item_from_detail_page(self, browser: selenium.webdriver.Chrome) -> Item:
+        :return:
+        """
         # TODO:判断是否是详情页，且有可能长时间未响应/无货/链接无效
         item = Item()
         # 获取颜色标题及所选项目值
@@ -177,9 +185,9 @@ class JdDetailPageReader:
         # 获取商品url,可能失败
         try:
             item.url = browser.current_url
-        except TimeoutException as err:
+        except TimeoutException:
             logging.warning('Get url failed! at method:JdDetailReader.get_jd_item_from_detail_page()')
-            raise exception.GetUrlFailedException
+            return None
         # 领券
         ticket_dom = self.get_jd_ticket_dom_from_detail_page(browser)
         if ticket_dom is not None and len(ticket_dom) != 0:
@@ -236,8 +244,8 @@ class JdDetailPageReader:
             return -1
 
 
-class DatabaseHelper:
 
+class DatabaseHelper:
     __sql_insert_commodity = "INSERT INTO COMMODITY(item_url_md5,item_url, item_title," \
                              "item_name, item_type, keyword, store_name, store_url) " \
                              "VALUE ('%s','%s','%s','%s','%s','%s','%s','%s');"
@@ -251,7 +259,7 @@ class DatabaseHelper:
     __sql_query_item = "SELECT * FROM item " \
                        "WHERE item_url_md5='%s' " \
                        "ORDER BY data_begin_time DESC " \
-                       "LIMIT 1;"   # 选取最顶上一条记录即可
+                       "LIMIT 1;"  # 选取最顶上一条记录即可
     __sql_update_item = "UPDATE item " \
                         "SET data_end_time=%f " \
                         "WHERE item_url_md5='%s' and data_begin_time=%f and item_price=%f ;"
@@ -264,14 +272,13 @@ class DatabaseHelper:
         if self.__connection is not None and self.__is_mysql_connect_valid(self.__connection):
             self.__connection.close()  # 关闭连接
 
-    """
+    def __get_mysql_connection(self) -> pymysql.connections.Connection:
+        """
         仅供类内部使用，不能开放接口给外界读取，防止恶意关闭连接！
         DO NOT use the method in outside, it could lead to unexpected ERROR!
-        method:
-            return a member connection of mysql, it confirm are alive.
-    """
-
-    def __get_mysql_connection(self) -> pymysql.connections.Connection:
+        :return:
+            a member connection of mysql, it confirm are alive.
+        """
         if self.__connection is None:
             # TODO:从外部文件读入用户名/密码/host！
             self.__connection = pymysql.connect(
@@ -282,62 +289,59 @@ class DatabaseHelper:
         self.__connection.ping(True)
         return self.__connection
 
-    """
-        method: 
-            detect whether the supplied mysql connection alive.
-    """
     @staticmethod
     def __is_mysql_connect_valid(connect: pymysql.connections.Connection) -> bool:
+        """
+        method:
+            detect whether the supplied mysql connection alive.
+        :param connect:
+        :return:
+        """
         try:
             connect.ping(False)
         except pymysql.err.Error:
             return False
         return True
 
-    """
-        method: 
-            save gave commodity info into mysql database.
-        param: 
-            commodity: instance of Commodity, you must be confirm commodity.item_url not None.
-    """
     def insert_commodity(self, commodity: Commodity):
+        """
+        method:
+            save gave commodity info into mysql database.
+        :param
+            commodity: instance of Commodity, you must be confirm commodity.item_url not None.
+        :return:
+        """
         if type(commodity) != Commodity:
             return
-        # 检查是否存在,是的话跳过
+        # TODO:检查是否存在,是的话看看能否补全信息，而后跳过
         if self.is_commodity_exist(commodity.item_url_md5):
             logging.info('Url_md5:', commodity.item_url_md5, ' existed in database.')
             return
-        cursor = self.__connection.cursor()
-        try:
+        with self.__connection.cursor() as cursor:
             cursor.execute(self.__sql_insert_commodity % (
                 commodity.item_url_md5, commodity.item_url, commodity.item_title, commodity.item_name,
                 commodity.item_type, commodity.keyword, commodity.store_name, commodity.store_url
             ))
             self.__connection.commit()
-        except Exception:
-            traceback.print_exc()
-            raise
-        finally:
-            cursor.close()
 
-    """
-        method: 
-            save gave item info into mysql database.
-        param: 
-            item: instance of Item, you must be confirm item.item_url and item.data_date not None.
-    """
     def insert_item(self, item: Item):
+        """
+        method:
+            save gave item info into mysql database.
+        :param
+            item: instance of Item, you must be confirm item.item_url and item.data_date not None.
+        :return:
+        """
         if type(item) != Item:
             return
-        cursor = self.__connection.cursor()
-        try:
+        with self.__connection.cursor() as cursor:
             if self.is_item_price_changes(item):
+                # TODO:存在,的话看看能否补全信息
                 # TODO:这里item的起始时间已经不是当前时间了，通过is_item_price_changes()方法
                 #  XXX:已经改为了最新记录的起始时间，这样下面那句查询才能成功定位到该条记录，进而更新
                 cursor.execute(self.__sql_update_item % (
                     item.data_end_time, item.item_url_md5, item.data_begin_time, item.price))
                 self.__connection.commit()
-                print('update success!+++++++++++++++++++')
                 return
             cursor.execute(self.__sql_insert_item % (
                 item.item_url_md5, item.url, item.data_begin_time, item.data_end_time, item.price, item.plus_price,
@@ -345,11 +349,6 @@ class DatabaseHelper:
                 item.spec1, item.spec2, item.spec3, item.spec4, item.spec5, item.spec_other
             ))
             self.__connection.commit()
-        except Exception:
-            traceback.print_exc()
-            raise
-        finally:
-            cursor.close()
 
     def is_commodity_exist(self, commodity_md5: str) -> bool:
         if self.__connection.query(self.__sql_query_commodity % (commodity_md5,)) > 0:
@@ -357,18 +356,18 @@ class DatabaseHelper:
         return False
 
     def is_item_price_changes(self, item: Item) -> bool:
-        cursor = self.__connection.cursor()
-        cursor.execute(self.__sql_query_item % (item.item_url_md5,))
-        row = cursor.fetchone()
-        if row is None:
-            logging.warning('Query record error at DatabaseHelper.is_item_price_changes()'
-                            '\nget row is None\n', item.__str__())
-            return False
-        if item.price == row[4]:
-            # TODO:
-            #  XXX:这里将之前记录的起始时间传递出去，下一步更新时才方便查找该条记录
-            item.data_begin_time = row[2]
-            return True
+        with self.__connection.cursor() as cursor:
+            cursor.execute(self.__sql_query_item % (item.item_url_md5,))
+            row = cursor.fetchone()
+            if row is None:
+                logging.warning('Query record error at DatabaseHelper.is_item_price_changes()'
+                                '\nget row is None\n', item.__str__())
+                return False
+            if item.price == row[4]:
+                # TODO:
+                #  XXX:这里将之前记录的起始时间传递出去，下一步更新时才方便查找该条记录
+                item.data_begin_time = row[2]
+                return True
         return False
 
 
@@ -376,24 +375,21 @@ if __name__ == '__main__':
     laun = Launcher()
     helper = DatabaseHelper()
     jddr = JdDetailPageReader()
-    chrome = webdriver.Chrome(chrome_options=laun.chrome_option_initial())
-    chrome.set_page_load_timeout(9)  # 等待9秒
-    # ############# 当初的少年怎么也不会想到
-    laun.anti_detected_initial(chrome)
-    try:
-        chrome.get('https://item.jd.com/8735304.html#none')
-    except TimeoutException as err:
-        logging.info('Browser timeout!')
-        chrome.refresh()
-    comm = jddr.get_jd_commodity_from_detail_page(chrome)
-    ite = jddr.get_jd_item_from_detail_page(chrome)
-    helper.insert_commodity(comm)
-    helper.insert_item(ite)
-    time.sleep(10)
-    chrome.close()
+    with webdriver.Chrome(chrome_options=laun.chrome_option_initial()) as chrome_test:
+        chrome_test.set_page_load_timeout(10)  # 等待10秒
+        # ############# 当初的少年怎么也不会想到
+        laun.anti_detected_initial(chrome_test)
+        try:
+            chrome_test.get('https://item.jd.com/8735304.html#none')
+        except TimeoutException:
+            logging.info('Browser timeout!')
+        commo = jddr.get_jd_commodity_from_detail_page(chrome_test)
+        ite = jddr.get_jd_item_from_detail_page(chrome_test)
+        helper.insert_commodity(commo)
+        helper.insert_item(ite)
+        time.sleep(10)
 
 # https://item.jd.com/8735304.html#none
 # http://item.jd.com/20742438990.html # 只有商品颜色选择
 # http://item.jd.com/28252543502.html # 优惠券
 # https://item.jd.com/35165938134.html # plus
-

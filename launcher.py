@@ -244,6 +244,146 @@ class JdDetailPageReader:
             return -1
 
 
+class JdListPageReader:
+    # 商品属性对应xpath 考虑优先从外部文本文件读入，方便服务器端维护
+    __jd_list_page_goods_list_xpath = "//div[id=\'J_goodsList\']/ul/*"  # 搜索结果商品列表DOM SET
+    __jd_list_page_turn_xpath = "//div[class=\'page clearfix\']//span[class=\'p-num\']/*"  # 翻页按钮
+    # 以下xpath必须配合__jd_list_page_goods_list_xpath使用
+    __jd_list_page_price_xpath = "//div[class=\'p-price\']/strong/i"  # 价格
+    __jd_list_page_item_name_xpath = "//div[class=\'p-name p-name-type-2\']/a/em"  # 商品名
+    __jd_list_page_item_url_xpath = "//div[class=\'p-name p-name-type-2\']/a"  # 商品url
+    __jd_list_page_sales_amount_xpath = "//div[class=\'p-commit\']/strong/a"  # 销量
+    __jd_list_page_store_name_xpath = "//div[class=\'p-shop\']/span/a"  # 店铺名
+    __jd_list_page_store_url_xpath = "//div[class=\'p-shop\']/span/a"  # 店铺url
+
+    def __init__(self) -> None:
+        super().__init__()
+
+    def get_jd_commodities_from_list_page(self, browser: selenium.webdriver.Chrome, keyword: str) -> list:
+        """
+        method:
+            Rely the supplied jd commodity detail page. the method format read in info and then return a
+            commodity instance.
+        :param
+            browser: an instance of browser which includes Chrome/Edge/FireFox etc.
+            cautiously, the browser current page must be a commodity page.
+        :return:
+            a commodity instance.
+        """
+        # TODO:判断是否是详情页，且有可能长时间未响应/无货/链接无效
+        goods_dom_list = self.get_jd_list_page_goods_list(browser)
+        goods_list = []
+        for goods_dom in goods_dom_list:
+            # 读取单个commodity
+            comm = self.get_jd_list_page_single_goods_commodity(browser, goods_dom)
+            if comm is not None:
+                comm.keyword = keyword
+                goods_list.append(comm)
+        return goods_list
+
+    def get_jd_item_from_list_page(self, browser: selenium.webdriver.Chrome) -> list:
+        """
+        method:
+            Rely the supplied jd item detail page. the method format read in info and then return a
+            item instance.
+        :param
+            browser: an instance of browser which includes Chrome/Edge/FireFox etc.
+            cautiously, the browser current page must be a commodity detail page.
+        :return:
+        """
+        # TODO:判断是否是详情页，且有可能长时间未响应/无货/链接无效
+        goods_dom_list = self.get_jd_list_page_goods_list(browser)
+        item_list = []
+        for goods_dom in goods_dom_list:
+            # 读取单个item
+            item = self.get_jd_list_page_single_goods_items(browser, goods_dom)
+            if item is not None:
+                item_list.append(item)
+        return item_list
+
+    def get_jd_list_page_goods_list(self, browser: selenium.webdriver.Chrome) -> list:
+        return browser.find_elements(By.XPATH, self.__jd_list_page_goods_list_xpath)
+
+    def get_jd_list_page_single_goods_commodity(self, browser: selenium.webdriver.Chrome, element: WebElement) \
+            -> (Commodity, None):
+        """
+        :param browser:
+        :param element:
+        :return:
+            An instance of Commodity which haven't set the value of keyword
+            or None, if an error occurred.
+        """
+        # 获取商品url,可能失败
+        comm = Commodity()
+        try:
+            comm.item_url = browser.current_url
+        except TimeoutException:
+            logging.warning('Get url failed! at method:JdListPageReader.get_jd_list_page_single_goods_commodity()')
+            return None
+        # XXX: Keyword未指定
+
+        # 获取商品title
+        comm.item_title = browser.title
+        # 获取商品name
+        comm.item_name = self.get_jd_item_name_from_list_page(element)
+        # 获取商品分类（列表下是不存在的）
+        # 获取店铺url
+        comm.store_url = self.get_jd_store_url_from_list_page(element)
+        # 获取店铺名
+        comm.store_name = self.get_jd_store_name_from_list_page(element)
+        return comm
+
+    def get_jd_list_page_single_goods_items(self, browser: selenium.webdriver.Chrome, element: WebElement) \
+            -> (Item, None):
+        """
+
+        :param browser:
+        :param element:
+        :return:
+            An instance of Item or None, if an error occurred.
+        """
+        item = Item()
+        # 起止时间
+        item.data_begin_time = item.data_end_time = time.time()
+        # 获取颜色标题及所选项目值（详情列表不存在的）
+        # 获取版本标题及所选项目值（详情列表不存在的）
+        # 获取价格
+        item.price = self.get_jd_price_from_list_page(element)
+        # 获取plus会员价格（详情列表不存在的）
+        # 获取商品url,可能失败
+        try:
+            item.url = browser.current_url
+        except TimeoutException:
+            logging.warning('Get url failed! at method:JdListPageReader.get_jd_list_page_single_goods_item()')
+            return None
+        # 领券（详情列表不存在的）
+        # 库存:京东不显示库存量，只有有无货之分（详情列表不存在的）
+        # 快递费:京东各省价格均不同，有货情况也不同故不做记录（详情列表不存在的）
+        # 销量
+        item.sales_amount = self.get_jd_sales_amount_from_list_page(element)
+        # 可选字段（详情列表不存在的）
+        # 生成所有字段（详情列表不存在的）
+        item.generate_all_specification()
+        return item
+
+    def get_jd_store_name_from_list_page(self, element: WebElement) -> str:
+        return element.find_element(By.XPATH, self.__jd_list_page_store_name_xpath).text.strip()
+
+    def get_jd_store_url_from_list_page(self, element: WebElement) -> str:
+        return element.find_element(By.XPATH, self.__jd_list_page_store_name_xpath).get_attribute('href')
+
+    def get_jd_item_name_from_list_page(self, element: WebElement) -> str:
+        return element.find_element(By.XPATH, self.__jd_list_page_item_name_xpath).text.strip()
+
+    def get_jd_sales_amount_from_list_page(self, element: WebElement) -> str:
+        return element.find_element(By.XPATH, self.__jd_list_page_sales_amount_xpath).text[0: -1].strip()
+
+    def get_jd_price_from_list_page(self, element: WebElement) -> float:
+        try:
+            return float(element.find_element(By.XPATH, self.__jd_list_page_price_xpath).text)
+        except ValueError:
+            return -1
+
 
 class DatabaseHelper:
     __sql_insert_commodity = "INSERT INTO COMMODITY(item_url_md5,item_url, item_title," \

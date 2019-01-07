@@ -102,6 +102,7 @@ class Launcher:
 
 class JdDetailPageReader:
     # 商品属性对应xpath 考虑优先从外部文本文件读入，方便服务器端维护
+    __jd_detail_page_detect = "//div[class=\'preview-wrap\']/div[class=\'itemInfo-wrap\']"
     __jd_detail_page_specification_xpath = "//*[@class=\'summary p-choose-wrap\']/*"
     __jd_detail_page_color_xpath = "//*[@id=\'choose-attr-1\']/*"  # jd颜色选项
     __jd_detail_page_edition_xpath = "//*[@id=\'choose-attr-2\']/*"  # jd版本选项
@@ -126,12 +127,16 @@ class JdDetailPageReader:
             cautiously, the browser current page must be a commodity page.
         :return:
         """
-        # TODO:判断是否是详情页，且有可能长时间未响应/无货/链接无效
+        # TODO:有可能无货/链接无效
+        if not self.is_current_page_is_jd_detail(browser):
+            logging.info("[JdDetailPageReader.get_jd_commodity_from_detail_page]"
+                         " Current page is't detail page:", browser.title)
+            return None  # 判断是否是详情页
         comm = Commodity()
         # 获取商品url,可能失败
         try:
             comm.item_url = browser.current_url
-        except TimeoutException as err:
+        except TimeoutException:
             logging.warning('Get url failed! at method:JdDetailReader.get_jd_commodity_from_detail_page()')
             return None
         # 获取商品title
@@ -158,7 +163,11 @@ class JdDetailPageReader:
             cautiously, the browser current page must be a commodity detail page.
         :return:
         """
-        # TODO:判断是否是详情页，且有可能长时间未响应/无货/链接无效
+        # TODO:有可能无货/链接无效
+        if not self.is_current_page_is_jd_detail(browser):
+            logging.info("[JdDetailPageReader.get_jd_item_from_detail_page]"
+                         " Current page is't detail page:", browser.title)
+            return None  # 判断是否是详情页
         item = Item()
         # 获取颜色标题及所选项目值
         color_dom = self.get_jd_color_dom_from_detail_page(browser)
@@ -182,7 +191,7 @@ class JdDetailPageReader:
         item.price = self.get_jd_price_from_detail_page(browser)
         # 获取plus会员价格
         item.plus_price = self.get_jd_plus_price_from_detail_page(browser)
-        # 获取商品url,可能失败
+        # 获取商品url,可能因加载中等失败
         try:
             item.url = browser.current_url
         except TimeoutException:
@@ -203,6 +212,12 @@ class JdDetailPageReader:
         # 生成所有字段
         item.generate_all_specification()
         return item
+
+    def is_current_page_is_jd_detail(self, browser: selenium.webdriver.Chrome):
+        dom = browser.find_element(By.XPATH, self.__jd_detail_page_detect)
+        if dom is None:
+            return False
+        return True
 
     def get_jd_store_name_from_detail_page(self, browser: selenium.webdriver.Chrome) -> str:
         return browser.find_element(By.XPATH, self.__jd_detail_page_store_name_xpath).text.strip()
@@ -228,8 +243,22 @@ class JdDetailPageReader:
     def get_jd_ticket_dom_from_detail_page(self, browser: selenium.webdriver.Chrome):
         return browser.find_elements(By.XPATH, self.__jd_detail_page_ticket_xpath)
 
-    def get_jd_remark_from_detail_page(self, browser: selenium.webdriver.Chrome) -> str:
-        return browser.find_element(By.XPATH, self.__jd_detail_page_remark_xpath).text[1: -2]
+    def get_jd_remark_from_detail_page(self, browser: selenium.webdriver.Chrome) -> int:
+        remark = browser.find_element(By.XPATH, self.__jd_detail_page_remark_xpath).text[1: -1]
+        if len(remark) > 1:
+            remark = remark[:-1]  # 说明销量不为个位数
+        amount = 0.0
+        try:
+            amount = float(remark)  # 这里用于识别个位数销量
+        except ValueError:
+            suffix = remark[-1:]
+            if suffix == '+':
+                amount = float(remark[:-1])
+            if suffix == '万':
+                amount = float(remark[:-1]) * 10000
+            elif suffix == '亿':
+                amount = float(remark[:-1]) * 100000000
+        return int(amount)
 
     def get_jd_price_from_detail_page(self, browser: selenium.webdriver.Chrome) -> float:
         try:
@@ -245,7 +274,10 @@ class JdDetailPageReader:
 
 
 class JdListPageReader:
+
+    __jd_sales_amount_limit = 3000  # 高于该销量的商品才记录
     # 商品属性对应xpath 考虑优先从外部文本文件读入，方便服务器端维护
+    __jd_list_page_detect = "//div[id=\'J_main\']//div[id=\'J_goodsList\']"
     __jd_list_page_goods_list_xpath = "//div[id=\'J_goodsList\']/ul/*"  # 搜索结果商品列表DOM SET
     __jd_list_page_turn_xpath = "//div[class=\'page clearfix\']//span[class=\'p-num\']/*"  # 翻页按钮
     # 以下xpath必须配合__jd_list_page_goods_list_xpath使用
@@ -259,6 +291,10 @@ class JdListPageReader:
     def __init__(self) -> None:
         super().__init__()
 
+    @property
+    def jd_sales_amount_limit(self):
+        return self.__jd_sales_amount_limit
+
     def get_jd_commodities_from_list_page(self, browser: selenium.webdriver.Chrome, keyword: str) -> list:
         """
         method:
@@ -270,18 +306,25 @@ class JdListPageReader:
         :return:
             a commodity instance.
         """
-        # TODO:判断是否是详情页，且有可能长时间未响应/无货/链接无效
-        goods_dom_list = self.get_jd_list_page_goods_list(browser)
+        # TODO:有可能长时间未响应
         goods_list = []
+        if not self.is_current_page_is_jd_list(browser):
+            return goods_list  # 判断是否是详情页
+        goods_dom_list = self.get_jd_list_page_goods_list(browser)
         for goods_dom in goods_dom_list:
-            # 读取单个commodity
+            # 读取单个commodity，查看是否符合销量限制
+            remark = self.get_jd_sales_amount_from_list_page(goods_dom)
+            if remark < self.jd_sales_amount_limit:
+                continue
+            # 读取
             comm = self.get_jd_list_page_single_goods_commodity(browser, goods_dom)
             if comm is not None:
+                # 补全keyword，通过哪个关键字搜到的
                 comm.keyword = keyword
                 goods_list.append(comm)
         return goods_list
 
-    def get_jd_item_from_list_page(self, browser: selenium.webdriver.Chrome) -> list:
+    def get_jd_items_from_list_page(self, browser: selenium.webdriver.Chrome) -> list:
         """
         method:
             Rely the supplied jd item detail page. the method format read in info and then return a
@@ -291,15 +334,27 @@ class JdListPageReader:
             cautiously, the browser current page must be a commodity detail page.
         :return:
         """
-        # TODO:判断是否是详情页，且有可能长时间未响应/无货/链接无效
-        goods_dom_list = self.get_jd_list_page_goods_list(browser)
         item_list = []
+        # TODO:有可能长时间未响应
+        if not self.is_current_page_is_jd_list(browser):
+            return item_list  # 判断是否是详情页
+        goods_dom_list = self.get_jd_list_page_goods_list(browser)
         for goods_dom in goods_dom_list:
+            # 读取单个commodity，查看是否符合销量限制
+            remark = self.get_jd_sales_amount_from_list_page(goods_dom)
+            if remark < self.jd_sales_amount_limit:
+                continue
             # 读取单个item
             item = self.get_jd_list_page_single_goods_items(browser, goods_dom)
             if item is not None:
                 item_list.append(item)
         return item_list
+
+    def is_current_page_is_jd_list(self, browser: selenium.webdriver.Chrome) -> bool:
+        dom = browser.find_element(By.XPATH, self.__jd_list_page_detect)
+        if dom is None:
+            return False
+        return True
 
     def get_jd_list_page_goods_list(self, browser: selenium.webdriver.Chrome) -> list:
         return browser.find_elements(By.XPATH, self.__jd_list_page_goods_list_xpath)
@@ -308,7 +363,8 @@ class JdListPageReader:
             -> (Commodity, None):
         """
         :param browser:
-        :param element:
+        :param
+            element:A item of the list witch gain by method: get_jd_list_page_goods_list().
         :return:
             An instance of Commodity which haven't set the value of keyword
             or None, if an error occurred.
@@ -336,9 +392,9 @@ class JdListPageReader:
     def get_jd_list_page_single_goods_items(self, browser: selenium.webdriver.Chrome, element: WebElement) \
             -> (Item, None):
         """
-
         :param browser:
         :param element:
+            A item of the list witch gain by method: get_jd_list_page_goods_list().
         :return:
             An instance of Item or None, if an error occurred.
         """
@@ -375,8 +431,22 @@ class JdListPageReader:
     def get_jd_item_name_from_list_page(self, element: WebElement) -> str:
         return element.find_element(By.XPATH, self.__jd_list_page_item_name_xpath).text.strip()
 
-    def get_jd_sales_amount_from_list_page(self, element: WebElement) -> str:
-        return element.find_element(By.XPATH, self.__jd_list_page_sales_amount_xpath).text[0: -1].strip()
+    def get_jd_sales_amount_from_list_page(self, element: WebElement) -> int:
+        remark = element.find_element(By.XPATH, self.__jd_list_page_sales_amount_xpath).text
+        if len(remark) > 1:
+            remark = remark[:-1]  # 说明销量不为个位数
+        amount = 0.0
+        try:
+            amount = float(remark)  # 这里用于识别个位数销量
+        except ValueError:
+            suffix = remark[-1:]
+            if suffix == '+':
+                amount = float(remark[:-1])
+            if suffix == '万':
+                amount = float(remark[:-1]) * 10000
+            elif suffix == '亿':
+                amount = float(remark[:-1]) * 100000000
+        return int(amount)
 
     def get_jd_price_from_list_page(self, element: WebElement) -> float:
         try:
@@ -392,7 +462,7 @@ class DatabaseHelper:
     __sql_insert_item = "INSERT INTO ITEM(item_url_md5,item_url,data_begin_time,data_end_time," \
                         "item_price,plus_price, ticket, inventory, sales_amount, transport_fare," \
                         "all_specification, spec1, spec2, spec3, spec4, spec5, spec_other) " \
-                        "VALUE ('%s','%s',%f,%f,%f,%f,'%s',%d,'%s',%f" \
+                        "VALUE ('%s','%s',%f,%f,%f,%f,'%s',%d,'%d',%f" \
                         ",'%s','%s','%s','%s','%s','%s','%s');"
     __sql_query_commodity = "SELECT * FROM commodity " \
                             "WHERE item_url_md5='%s';"
@@ -415,7 +485,7 @@ class DatabaseHelper:
     def __get_mysql_connection(self) -> pymysql.connections.Connection:
         """
         仅供类内部使用，不能开放接口给外界读取，防止恶意关闭连接！
-        DO NOT use the method in outside, it could lead to unexpected ERROR!
+        DO NOT use the method at outside, it could lead to unexpected ERROR!
         :return:
             a member connection of mysql, it confirm are alive.
         """
@@ -434,7 +504,8 @@ class DatabaseHelper:
         """
         method:
             detect whether the supplied mysql connection alive.
-        :param connect:
+        :param
+            connect: An instance of pymysql.connections.Connection
         :return:
         """
         try:
@@ -442,6 +513,9 @@ class DatabaseHelper:
         except pymysql.err.Error:
             return False
         return True
+
+    def refresh_items(self):
+        pass  # TODO:针对已记录且未在当日搜索结果的商品，应该另起一个线程处理该情况
 
     def insert_commodity(self, commodity: Commodity):
         """
@@ -496,12 +570,20 @@ class DatabaseHelper:
         return False
 
     def is_item_price_changes(self, item: Item) -> bool:
+        """
+        method:
+            Judge current price whether changed. In the other words, is the least record price equals item.price
+        :param
+            item: An instance of Item
+        :return:
+        """
         with self.__connection.cursor() as cursor:
             cursor.execute(self.__sql_query_item % (item.item_url_md5,))
             row = cursor.fetchone()
             if row is None:
                 logging.warning('Query record error at DatabaseHelper.is_item_price_changes()'
                                 '\nget row is None\n', item.__str__())
+                # 说明之前未记录该商品信息
                 return False
             if item.price == row[4]:
                 # TODO:
@@ -517,7 +599,7 @@ if __name__ == '__main__':
     jddr = JdDetailPageReader()
     with webdriver.Chrome(chrome_options=laun.chrome_option_initial()) as chrome_test:
         chrome_test.set_page_load_timeout(10)  # 等待10秒
-        # ############# 当初的少年怎么也不会想到
+        #############
         laun.anti_detected_initial(chrome_test)
         try:
             chrome_test.get('https://item.jd.com/8735304.html#none')

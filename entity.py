@@ -86,7 +86,7 @@ class Item:
     inventory = -1
     __data_begin_time = time.time()
     __data_end_time = time.time()
-    __sales_amount = ''
+    __sales_amount = 0
     __transport_fare = -1
     __all_specification = ''
     __spec1 = ''
@@ -179,12 +179,14 @@ class Item:
         self.__data_end_time = value
 
     @property
-    def sales_amount(self) -> str:
+    def sales_amount(self) -> int:
         return self.__sales_amount
 
     @sales_amount.setter
-    def sales_amount(self, value: str):
-        self.__sales_amount = str(value).strip().replace('\n', '')
+    def sales_amount(self, value: int):
+        if type(value) is not int:
+            return
+        self.__sales_amount = value
 
     @property
     def transport_fare(self) -> float:

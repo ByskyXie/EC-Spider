@@ -72,7 +72,7 @@ class Commodity:
         self.__store_url = str(value).strip()
 
     def __str__(self) -> str:
-        return '[MD5]:' + self.item_url_md5 + '[Title]:' + self.item_title + '\n[Url]:' \
+        return '[MD5]:' + self.item_url_md5 + '\n[Title]:' + self.item_title + '\n[Url]:' \
                + self.item_url + '\n[Keyword]:' + self.keyword + '\n[Store]:' + self.store_name \
                + '\n[Url]:' + self.store_url + '\n[Type]:' + self.item_type
 

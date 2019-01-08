@@ -28,7 +28,7 @@ class Launcher:
         :param ec_list:
         :return:
         """
-        # TODO:初始化
+        # TODO:初始化，设置显式等待减少加载时间
         with webdriver.Chrome(self.chrome_option_initial()) as chrome:
             pass
 
@@ -63,7 +63,7 @@ class Launcher:
         options.add_experimental_option('prefs', prefs)
         options.add_argument("disable-cache")
         # 启动浏览器的时候不想看的浏览器运行，那就加载浏览器的静默模式，让它在后台偷偷运行。用headless
-        # option.add_argument('headless')
+        # options.add_argument('headless')
         return options
 
     @staticmethod
@@ -279,15 +279,15 @@ class JdListPageReader:
     __jd_sales_amount_limit = 3000  # 高于该销量的商品才记录
     # 商品属性对应xpath 考虑优先从外部文本文件读入，方便服务器端维护
     __jd_list_page_detect = "//div[@id=\'J_main\']//div[@id=\'J_goodsList\']"
-    __jd_list_page_goods_list_xpath = "//div[id=\'J_goodsList\']/ul/*"  # 搜索结果商品列表DOM SET
-    __jd_list_page_turn_xpath = "//div[class=\'page clearfix\']//span[class=\'p-num\']/*"  # 翻页按钮
+    __jd_list_page_goods_list_xpath = "//div[@id=\'J_goodsList\']/ul/*"  # 搜索结果商品列表DOM SET
+    __jd_list_page_turn_xpath = "//div[@class=\'page clearfix\']//span[@class=\'p-num\']/*"  # 翻页按钮
     # 以下xpath必须配合__jd_list_page_goods_list_xpath使用
-    __jd_list_page_price_xpath = "//div[class=\'p-price\']/strong/i"  # 价格
-    __jd_list_page_item_name_xpath = "//div[class=\'p-name p-name-type-2\']/a/em"  # 商品名
-    __jd_list_page_item_url_xpath = "//div[class=\'p-name p-name-type-2\']/a"  # 商品url
-    __jd_list_page_sales_amount_xpath = "//div[class=\'p-commit\']/strong/a"  # 销量
-    __jd_list_page_store_name_xpath = "//div[class=\'p-shop\']/span/a"  # 店铺名
-    __jd_list_page_store_url_xpath = "//div[class=\'p-shop\']/span/a"  # 店铺url
+    __jd_list_page_price_xpath = ".//div[@class=\'p-price\']/strong/i"  # 价格
+    __jd_list_page_item_name_xpath = ".//div[@class=\'p-name p-name-type-2\']/a/em"  # 商品名
+    __jd_list_page_item_url_xpath = ".//div[@class=\'p-name p-name-type-2\']/a"  # 商品url
+    __jd_list_page_sales_amount_xpath = ".//div[@class=\'p-commit\']/strong/a"  # 销量
+    __jd_list_page_store_name_xpath = ".//div[@class=\'p-shop\']/span/a"  # 店铺名
+    __jd_list_page_store_url_xpath = ".//div[@class=\'p-shop\']/span/a"  # 店铺url
 
     def __init__(self) -> None:
         super().__init__()
@@ -373,17 +373,13 @@ class JdListPageReader:
         """
         # 获取商品url,可能失败
         comm = Commodity()
-        try:
-            comm.item_url = browser.current_url
-        except TimeoutException:
-            logging.warning('Get url failed! at method:JdListPageReader.get_jd_list_page_single_goods_commodity()')
-            return None
+        comm.item_url = self.get_jd_item_url_from_list_page(element)
         # XXX: Keyword未指定
 
         # 获取商品title
-        comm.item_title = browser.title
+        comm.item_title = self.get_jd_item_name_from_list_page(element)
         # 获取商品name
-        comm.item_name = self.get_jd_item_name_from_list_page(element)
+        comm.item_name = comm.item_title
         # 获取商品分类（列表下是不存在的）
         # 获取店铺url
         comm.store_url = self.get_jd_store_url_from_list_page(element)
@@ -408,12 +404,8 @@ class JdListPageReader:
         # 获取价格
         item.price = self.get_jd_price_from_list_page(element)
         # 获取plus会员价格（详情列表不存在的）
-        # 获取商品url,可能失败
-        try:
-            item.url = browser.current_url
-        except TimeoutException:
-            logging.warning('Get url failed! at method:JdListPageReader.get_jd_list_page_single_goods_item()')
-            return None
+        # 获取商品url
+        item.url = self.get_jd_item_url_from_list_page(element)
         # 领券（详情列表不存在的）
         # 库存:京东不显示库存量，只有有无货之分（详情列表不存在的）
         # 快递费:京东各省价格均不同，有货情况也不同故不做记录（详情列表不存在的）
@@ -432,6 +424,9 @@ class JdListPageReader:
 
     def get_jd_item_name_from_list_page(self, element: WebElement) -> str:
         return element.find_element(By.XPATH, self.__jd_list_page_item_name_xpath).text.strip()
+
+    def get_jd_item_url_from_list_page(self, element: WebElement) -> str:
+        return element.find_element(By.XPATH, self.__jd_list_page_item_url_xpath).get_attribute('href')
 
     def get_jd_sales_amount_from_list_page(self, element: WebElement) -> int:
         remark = element.find_element(By.XPATH, self.__jd_list_page_sales_amount_xpath).text
@@ -460,12 +455,20 @@ class JdListPageReader:
 class DatabaseHelper:
     __sql_insert_commodity = "INSERT INTO COMMODITY(item_url_md5,item_url, item_title," \
                              "item_name, item_type, keyword, store_name, store_url) " \
-                             "VALUE ('%s','%s','%s','%s','%s','%s','%s','%s');"
+                             "VALUES ('%s','%s','%s','%s','%s','%s','%s','%s');"
+    __sql_insert_commodities = "INSERT IGNORE INTO COMMODITY(item_url_md5,item_url, item_title," \
+                               "item_name, item_type, keyword, store_name, store_url) " \
+                               "VALUES (%s,%s,%s,%s,%s,%s,%s,%s);"  # # insert_many需要%s占位,IGNORE/REPLACE关键字
     __sql_insert_item = "INSERT INTO ITEM(item_url_md5,item_url,data_begin_time,data_end_time," \
                         "item_price,plus_price, ticket, inventory, sales_amount, transport_fare," \
                         "all_specification, spec1, spec2, spec3, spec4, spec5, spec_other) " \
-                        "VALUE ('%s','%s',%f,%f,%f,%f,'%s',%d,'%d',%f" \
+                        "VALUES ('%s','%s',%f,%f,%f,%f,'%s',%d,'%d',%f" \
                         ",'%s','%s','%s','%s','%s','%s','%s');"
+    __sql_insert_items = "INSERT IGNORE INTO ITEM(item_url_md5,item_url,data_begin_time,data_end_time," \
+                         "item_price,plus_price, ticket, inventory, sales_amount, transport_fare," \
+                         "all_specification, spec1, spec2, spec3, spec4, spec5, spec_other) " \
+                         "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s" \
+                         ",%s,%s,%s,%s,%s,%s,%s);"  # insert_many需要%s占位，可以用REPLACE关键字
     __sql_query_commodity = "SELECT * FROM commodity " \
                             "WHERE item_url_md5='%s';"
     __sql_query_item = "SELECT * FROM item " \
@@ -520,8 +523,27 @@ class DatabaseHelper:
         pass  # TODO:针对已记录且未在当日搜索结果的商品，应该另起一个线程处理该情况
 
     def insert_commodities(self, commodity_list: list):
+        if type(commodity_list) is not list or len(commodity_list) == 0 \
+                or type(commodity_list[0]) is not Commodity:
+            return
+        with self.__connection.cursor() as cursor:
+            try:
+                cursor.executemany(self.__sql_insert_commodities
+                                   , self.__general_nesting_commodity_list(commodity_list))
+                assert cursor.rowcount == len(commodity_list), 'Not all commodities insert success.'
+                self.__connection.commit()
+            except Exception:
+                logging.info('Insert commodities occurred error.', traceback.print_exc())
+
+    @staticmethod
+    def __general_nesting_commodity_list(commodity_list: list) -> list:
+        nesting_list = []
         for commodity in commodity_list:
-            self.insert_commodity(commodity)
+            nesting_list.append(
+                (commodity.item_url_md5, commodity.item_url, commodity.item_title,
+                 commodity.item_name, commodity.item_type, commodity.keyword,
+                 commodity.store_name, commodity.store_url))
+        return nesting_list
 
     def insert_commodity(self, commodity: Commodity):
         """
@@ -545,8 +567,27 @@ class DatabaseHelper:
             self.__connection.commit()
 
     def insert_items(self, item_list: list):
+        if type(item_list) is not list or len(item_list) == 0 \
+                or type(item_list[0]) is not Item:
+            return
+        with self.__connection.cursor() as cursor:
+            try:
+                cursor.executemany(self.__sql_insert_items, self.__general_nesting_item_list(item_list))
+                assert cursor.rowcount == len(item_list), 'Not all items insert success.'
+                self.__connection.commit()
+            except Exception:
+                logging.info('Insert items occurred error.', traceback.print_exc())
+
+    @staticmethod
+    def __general_nesting_item_list(item_list: list) -> list:
+        nesting_list = []
         for item in item_list:
-            self.insert_item(item)
+            nesting_list.append(
+                (item.item_url_md5, item.url, item.data_begin_time, item.data_end_time,
+                 item.price, item.plus_price, item.ticket, item.inventory, item.sales_amount,
+                 item.transport_fare, item.all_specification, item.spec1, item.spec2,
+                 item.spec3, item.spec4, item.spec5, item.spec_other))
+        return nesting_list
 
     def insert_item(self, item: Item):
         """
@@ -567,6 +608,7 @@ class DatabaseHelper:
                     item.data_end_time, item.item_url_md5, item.data_begin_time, item.price))
                 self.__connection.commit()
                 return
+            # 批量导入，list内元素必须为tuple:(value1,value2,value3...)
             cursor.execute(self.__sql_insert_item % (
                 item.item_url_md5, item.url, item.data_begin_time, item.data_end_time, item.price, item.plus_price,
                 item.ticket, item.inventory, item.sales_amount, item.transport_fare, item.all_specification,
@@ -607,21 +649,30 @@ if __name__ == '__main__':
     laun = Launcher()
     helper = DatabaseHelper()
     jddr = JdDetailPageReader()
+    jlpr = JdListPageReader()
     with webdriver.Chrome(chrome_options=laun.chrome_option_initial()) as chrome_test:
         chrome_test.implicitly_wait(10)  # 等待10秒
         #############
         laun.anti_detected_initial(chrome_test)
         try:
-            chrome_test.get('https://item.jd.com/8735304.html#none')
+            chrome_test.get('https://search.jd.com/Search?keyword='
+                            'u%E7%9B%98&enc=utf-8&wq=upan&pvid=95acc7c91d22499fba0252857fb31a7e')
+            chrome_test.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            # TODO:等待60条记录全出现后再读取
         except TimeoutException:
             logging.info('Browser timeout!')
-        commo = jddr.get_jd_commodity_from_detail_page(chrome_test)
-        ite = jddr.get_jd_item_from_detail_page(chrome_test)
-        helper.insert_commodity(commo)
-        helper.insert_item(ite)
+        commodity_list = jlpr.get_jd_commodities_from_list_page(chrome_test, 'U盘')
+        helper.insert_commodities(commodity_list)
+        item_list = jlpr.get_jd_items_from_list_page(chrome_test)
+        helper.insert_items(item_list)
+        # commo = jddr.get_jd_commodity_from_detail_page(chrome_test)
+        # ite = jddr.get_jd_item_from_detail_page(chrome_test)
+        # helper.insert_commodity(commo)
+        # helper.insert_item(ite)
     print('Finished.')
 
 # https://item.jd.com/8735304.html#none
 # http://item.jd.com/20742438990.html # 只有商品颜色选择
 # http://item.jd.com/28252543502.html # 优惠券
 # https://item.jd.com/35165938134.html # plus
+# https://search.jd.com/Search?keyword=u%E7%9B%98&enc=utf-8&wq=upan&pvid=95acc7c91d22499fba0252857fb31a7e # 搜U盘

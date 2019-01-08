@@ -102,7 +102,7 @@ class Launcher:
 
 class JdDetailPageReader:
     # 商品属性对应xpath 考虑优先从外部文本文件读入，方便服务器端维护
-    __jd_detail_page_detect = "//div[class=\'preview-wrap\']/div[class=\'itemInfo-wrap\']"
+    __jd_detail_page_detect = "//div[@class=\'product-intro clearfix\']/div[@class=\'itemInfo-wrap\']"
     __jd_detail_page_specification_xpath = "//*[@class=\'summary p-choose-wrap\']/*"
     __jd_detail_page_color_xpath = "//*[@id=\'choose-attr-1\']/*"  # jd颜色选项
     __jd_detail_page_edition_xpath = "//*[@id=\'choose-attr-2\']/*"  # jd版本选项
@@ -214,8 +214,9 @@ class JdDetailPageReader:
         return item
 
     def is_current_page_is_jd_detail(self, browser: selenium.webdriver.Chrome):
-        dom = browser.find_element(By.XPATH, self.__jd_detail_page_detect)
-        if dom is None:
+        try:
+            browser.find_element(By.XPATH, self.__jd_detail_page_detect)
+        except selenium.common.exceptions.NoSuchElementException:
             return False
         return True
 
@@ -277,7 +278,7 @@ class JdListPageReader:
 
     __jd_sales_amount_limit = 3000  # 高于该销量的商品才记录
     # 商品属性对应xpath 考虑优先从外部文本文件读入，方便服务器端维护
-    __jd_list_page_detect = "//div[id=\'J_main\']//div[id=\'J_goodsList\']"
+    __jd_list_page_detect = "//div[@id=\'J_main\']//div[@id=\'J_goodsList\']"
     __jd_list_page_goods_list_xpath = "//div[id=\'J_goodsList\']/ul/*"  # 搜索结果商品列表DOM SET
     __jd_list_page_turn_xpath = "//div[class=\'page clearfix\']//span[class=\'p-num\']/*"  # 翻页按钮
     # 以下xpath必须配合__jd_list_page_goods_list_xpath使用
@@ -351,8 +352,9 @@ class JdListPageReader:
         return item_list
 
     def is_current_page_is_jd_list(self, browser: selenium.webdriver.Chrome) -> bool:
-        dom = browser.find_element(By.XPATH, self.__jd_list_page_detect)
-        if dom is None:
+        try:
+            browser.find_element(By.XPATH, self.__jd_list_page_detect)
+        except selenium.common.exceptions.NoSuchElementException:
             return False
         return True
 
@@ -517,6 +519,10 @@ class DatabaseHelper:
     def refresh_items(self):
         pass  # TODO:针对已记录且未在当日搜索结果的商品，应该另起一个线程处理该情况
 
+    def insert_commodities(self, commodity_list: list):
+        for commodity in commodity_list:
+            self.insert_commodity(commodity)
+
     def insert_commodity(self, commodity: Commodity):
         """
         method:
@@ -537,6 +543,10 @@ class DatabaseHelper:
                 commodity.item_type, commodity.keyword, commodity.store_name, commodity.store_url
             ))
             self.__connection.commit()
+
+    def insert_items(self, item_list: list):
+        for item in item_list:
+            self.insert_item(item)
 
     def insert_item(self, item: Item):
         """
@@ -598,7 +608,7 @@ if __name__ == '__main__':
     helper = DatabaseHelper()
     jddr = JdDetailPageReader()
     with webdriver.Chrome(chrome_options=laun.chrome_option_initial()) as chrome_test:
-        chrome_test.set_page_load_timeout(10)  # 等待10秒
+        chrome_test.implicitly_wait(10)  # 等待10秒
         #############
         laun.anti_detected_initial(chrome_test)
         try:
@@ -609,7 +619,7 @@ if __name__ == '__main__':
         ite = jddr.get_jd_item_from_detail_page(chrome_test)
         helper.insert_commodity(commo)
         helper.insert_item(ite)
-        time.sleep(10)
+    print('Finished.')
 
 # https://item.jd.com/8735304.html#none
 # http://item.jd.com/20742438990.html # 只有商品颜色选择

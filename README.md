@@ -9,4 +9,4 @@
 ----------
 ## License
 
-[GPL-2.0](http://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html) or later.
+[LGPL-3.0](http://www.gnu.org/licenses/lgpl-3.0.en.html).

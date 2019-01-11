@@ -10,10 +10,11 @@ CREATE TABLE commodity(
 	item_url TEXT NOT NULL, 	-- 商品url --
 	item_title VARCHAR(250) NOT NULL,	-- 商品标题 --
 	item_name VARCHAR(250) NOT NULL,	-- 商品名称 --
-	item_type VARCHAR(250),	-- 产品类别 --
+	item_type VARCHAR(250),		-- 产品类别 --
 	keyword varchar(250) NOT NULL,  -- 通过什么关键字搜到该商品的？ --
 	store_name VARCHAR(250) NOT NULL,	-- 店铺名 --
-	store_url TEXT NOT NULL	-- 店铺URL --
+	store_url TEXT NOT NULL,		-- 店铺URL --
+	access_num INT NOT NULL			-- 近期访问次数，定时清空 --
 ) default charset = utf8;
 
 

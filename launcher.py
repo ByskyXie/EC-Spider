@@ -20,17 +20,41 @@ class Launcher:
     def __init__(self) -> None:
         super().__init__()
 
-    def launch_spider(self, browser: selenium.webdriver.Chrome, **ec_list):
+    def launch_spider(self, **ec_list):
         """
         method:
             The EC-Spider's entrance. you could selected scratch TaoBao/Tmall or jd.
-        :param browser:
         :param ec_list:
         :return:
         """
         # TODO:初始化，设置显式等待减少加载时间
-        with webdriver.Chrome(self.chrome_option_initial()) as chrome:
-            pass
+        # 1.根据搜索列表不断更新价格信息或是新增商品
+        helper = DatabaseHelper()
+        jlpr = JdListPageReader()
+        with webdriver.Chrome(chrome_options=laun.chrome_option_initial()) as chrome:
+            chrome.implicitly_wait(10)  # 等待10秒
+            #############
+            laun.anti_detected_initial(chrome)
+            try:
+                chrome.get('https://search.jd.com/Search?keyword='
+                                'u%E7%9B%98&enc=utf-8&wq=upan&pvid=95acc7c91d22499fba0252857fb31a7e')
+                chrome.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+                # TODO:等待60条记录全出现后再读取
+            except TimeoutException:
+                logging.info('Browser timeout!')
+            commodity_list = jlpr.get_jd_commodities_from_list_page(chrome, 'U盘')
+            helper.insert_commodities(commodity_list)
+            item_list = jlpr.get_jd_items_from_list_page(chrome)
+            helper.insert_items(item_list)
+
+        # 2.针对未更新但已有记录的商品，也更新
+        jddr = JdDetailPageReader()
+        # commo = jddr.get_jd_commodity_from_detail_page(chrome)
+        # ite = jddr.get_jd_item_from_detail_page(chrome)
+        # helper.insert_commodity(commo)
+        # helper.insert_item(ite)
+        # 3.若此轮执行耗时超过预计时间，进行商品的删除操作。删除依据为（销量，近期访问次数）
+        # 4.检查是否满足清除次数的条件，为真则利用SQL语句集体清空
 
     @staticmethod
     def anti_detected_initial(browser: selenium.webdriver.Chrome):
@@ -151,6 +175,7 @@ class JdDetailPageReader:
         comm.store_url = self.get_jd_store_url_from_detail_page(browser)
         # 获取店铺名
         comm.store_name = self.get_jd_store_name_from_detail_page(browser)
+        # 默认访问次数为0
         return comm
 
     def get_jd_item_from_detail_page(self, browser: selenium.webdriver.Chrome) -> (Item, None):
@@ -318,7 +343,7 @@ class JdListPageReader:
             if remark < self.jd_sales_amount_limit:
                 continue
             # 读取
-            comm = self.get_jd_list_page_single_goods_commodity(browser, goods_dom)
+            comm = self.get_jd_list_page_single_goods_commodity(goods_dom)
             if comm is not None:
                 # 补全keyword，通过哪个关键字搜到的
                 comm.keyword = keyword
@@ -346,7 +371,7 @@ class JdListPageReader:
             if remark < self.jd_sales_amount_limit:
                 continue
             # 读取单个item
-            item = self.get_jd_list_page_single_goods_items(browser, goods_dom)
+            item = self.get_jd_list_page_single_goods_items(goods_dom)
             if item is not None:
                 item_list.append(item)
         return item_list
@@ -361,10 +386,9 @@ class JdListPageReader:
     def get_jd_list_page_goods_list(self, browser: selenium.webdriver.Chrome) -> list:
         return browser.find_elements(By.XPATH, self.__jd_list_page_goods_list_xpath)
 
-    def get_jd_list_page_single_goods_commodity(self, browser: selenium.webdriver.Chrome, element: WebElement) \
+    def get_jd_list_page_single_goods_commodity(self, element: WebElement) \
             -> (Commodity, None):
         """
-        :param browser:
         :param
             element:A item of the list witch gain by method: get_jd_list_page_goods_list().
         :return:
@@ -385,12 +409,12 @@ class JdListPageReader:
         comm.store_url = self.get_jd_store_url_from_list_page(element)
         # 获取店铺名
         comm.store_name = self.get_jd_store_name_from_list_page(element)
+        # 默认访问次数为0
         return comm
 
-    def get_jd_list_page_single_goods_items(self, browser: selenium.webdriver.Chrome, element: WebElement) \
+    def get_jd_list_page_single_goods_items(self, element: WebElement) \
             -> (Item, None):
         """
-        :param browser:
         :param element:
             A item of the list witch gain by method: get_jd_list_page_goods_list().
         :return:
@@ -454,11 +478,11 @@ class JdListPageReader:
 
 class DatabaseHelper:
     __sql_insert_commodity = "INSERT INTO COMMODITY(item_url_md5,item_url, item_title," \
-                             "item_name, item_type, keyword, store_name, store_url) " \
-                             "VALUES ('%s','%s','%s','%s','%s','%s','%s','%s');"
+                             "item_name, item_type, keyword, store_name, store_url, access_num) " \
+                             "VALUES ('%s','%s','%s','%s','%s','%s','%s','%s',%d);"
     __sql_insert_commodities = "INSERT IGNORE INTO COMMODITY(item_url_md5,item_url, item_title," \
-                               "item_name, item_type, keyword, store_name, store_url) " \
-                               "VALUES (%s,%s,%s,%s,%s,%s,%s,%s);"  # # insert_many需要%s占位,IGNORE/REPLACE关键字
+                               "item_name, item_type, keyword, store_name, store_url, access_num) " \
+                               "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s);"  # # insert_many需要%s占位,IGNORE/REPLACE关键字
     __sql_insert_item = "INSERT INTO ITEM(item_url_md5,item_url,data_begin_time,data_end_time," \
                         "item_price,plus_price, ticket, inventory, sales_amount, transport_fare," \
                         "all_specification, spec1, spec2, spec3, spec4, spec5, spec_other) " \
@@ -542,7 +566,7 @@ class DatabaseHelper:
             nesting_list.append(
                 (commodity.item_url_md5, commodity.item_url, commodity.item_title,
                  commodity.item_name, commodity.item_type, commodity.keyword,
-                 commodity.store_name, commodity.store_url))
+                 commodity.store_name, commodity.store_url, commodity.access_num))
         return nesting_list
 
     def insert_commodity(self, commodity: Commodity):
@@ -562,7 +586,7 @@ class DatabaseHelper:
         with self.__connection.cursor() as cursor:
             cursor.execute(self.__sql_insert_commodity % (
                 commodity.item_url_md5, commodity.item_url, commodity.item_title, commodity.item_name,
-                commodity.item_type, commodity.keyword, commodity.store_name, commodity.store_url
+                commodity.item_type, commodity.keyword, commodity.store_name, commodity.store_url, commodity.access_num
             ))
             self.__connection.commit()
 
@@ -647,28 +671,7 @@ class DatabaseHelper:
 
 if __name__ == '__main__':
     laun = Launcher()
-    helper = DatabaseHelper()
-    jddr = JdDetailPageReader()
-    jlpr = JdListPageReader()
-    with webdriver.Chrome(chrome_options=laun.chrome_option_initial()) as chrome_test:
-        chrome_test.implicitly_wait(10)  # 等待10秒
-        #############
-        laun.anti_detected_initial(chrome_test)
-        try:
-            chrome_test.get('https://search.jd.com/Search?keyword='
-                            'u%E7%9B%98&enc=utf-8&wq=upan&pvid=95acc7c91d22499fba0252857fb31a7e')
-            chrome_test.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            # TODO:等待60条记录全出现后再读取
-        except TimeoutException:
-            logging.info('Browser timeout!')
-        commodity_list = jlpr.get_jd_commodities_from_list_page(chrome_test, 'U盘')
-        helper.insert_commodities(commodity_list)
-        item_list = jlpr.get_jd_items_from_list_page(chrome_test)
-        helper.insert_items(item_list)
-        # commo = jddr.get_jd_commodity_from_detail_page(chrome_test)
-        # ite = jddr.get_jd_item_from_detail_page(chrome_test)
-        # helper.insert_commodity(commo)
-        # helper.insert_item(ite)
+    laun.launch_spider()
     print('Finished.')
 
 # https://item.jd.com/8735304.html#none

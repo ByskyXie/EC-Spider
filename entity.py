@@ -12,6 +12,7 @@ class Commodity:
     __keyword = None
     __store_name = None
     __store_url = None
+    __access_num = 0
 
     def __init__(self) -> None:
         super().__init__()
@@ -71,10 +72,23 @@ class Commodity:
     def store_url(self, value: str):
         self.__store_url = str(value).strip()
 
+    @property
+    def access_num(self) -> int:
+        return self.__access_num
+
+    @access_num.setter
+    def access_num(self, value: int):
+        if type(value) is not int:
+            return
+        self.__access_num = value
+
+    def access_num_self_increment(self):
+        self.__access_num += 1
+
     def __str__(self) -> str:
-        return '[MD5]:' + self.item_url_md5 + '\n[Title]:' + self.item_title + '\n[Url]:' \
-               + self.item_url + '\n[Keyword]:' + self.keyword + '\n[Store]:' + self.store_name \
-               + '\n[Url]:' + self.store_url + '\n[Type]:' + self.item_type
+        return '[MD5]:' + self.item_url_md5 + '\n[Title]:' + self.item_title + '\n[Url]:' + self.item_url \
+               + '\n[Keyword]:' + self.keyword + '\n[Store]:' + self.store_name + '\n[Url]:' \
+               + self.store_url + '\n[Type]:' + self.item_type + '\t[Access num]:' + self.__access_num
 
 
 class Item:

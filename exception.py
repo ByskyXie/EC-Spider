@@ -17,9 +17,18 @@ class SpecNotFoundException(Exception):
 
 
 class GetUrlFailedException(Exception):
-
+    """
+        获取当前url错误
+    """
     def __init__(self, *args: object) -> None:
         super().__init__(*args)
 
+
+class NetSpeedTooSlowException(Exception):
+    """
+        访问url长时间未结束时报错
+    """
+    def __init__(self, *args: object) -> None:
+        super().__init__(*args)
 
 

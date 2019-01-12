@@ -12,6 +12,7 @@ from entity import Commodity
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.common.exceptions import TimeoutException
+from selenium.webdriver.support.wait import WebDriverWait
 from selenium.webdriver.remote.webelement import WebElement
 
 
@@ -20,41 +21,31 @@ class Launcher:
     def __init__(self) -> None:
         super().__init__()
 
-    def launch_spider(self, **ec_list):
+    def launch_spider(self):
         """
         method:
             The EC-Spider's entrance. you could selected scratch TaoBao/Tmall or jd.
-        :param ec_list:
+        :param
+            ec_list:
         :return:
         """
-        # TODO:初始化，设置显式等待减少加载时间
-        # 1.根据搜索列表不断更新价格信息或是新增商品
-        helper = DatabaseHelper()
-        jlpr = JdListPageReader()
         with webdriver.Chrome(chrome_options=laun.chrome_option_initial()) as chrome:
             chrome.implicitly_wait(10)  # 等待10秒
-            #############
-            laun.anti_detected_initial(chrome)
-            try:
-                chrome.get('https://search.jd.com/Search?keyword='
-                                'u%E7%9B%98&enc=utf-8&wq=upan&pvid=95acc7c91d22499fba0252857fb31a7e')
-                chrome.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                # TODO:等待60条记录全出现后再读取
-            except TimeoutException:
-                logging.info('Browser timeout!')
-            commodity_list = jlpr.get_jd_commodities_from_list_page(chrome, 'U盘')
-            helper.insert_commodities(commodity_list)
-            item_list = jlpr.get_jd_items_from_list_page(chrome)
-            helper.insert_items(item_list)
+            self.anti_detected_initial(chrome)
+            # 1.根据搜索列表不断更新价格信息或是新增商品
+            keyword_list = self.get_commodity_type_list()
+            # 访问京东
+            self.access_jd(chrome, keyword_list)
+            # 访问淘宝
 
-        # 2.针对未更新但已有记录的商品，也更新
-        jddr = JdDetailPageReader()
-        # commo = jddr.get_jd_commodity_from_detail_page(chrome)
-        # ite = jddr.get_jd_item_from_detail_page(chrome)
-        # helper.insert_commodity(commo)
-        # helper.insert_item(ite)
-        # 3.若此轮执行耗时超过预计时间，进行商品的删除操作。删除依据为（销量，近期访问次数）
-        # 4.检查是否满足清除次数的条件，为真则利用SQL语句集体清空
+            # 2.针对未更新但已有记录的商品，也更新
+            # jddr = JdDetailPageReader()
+            # commo = jddr.get_jd_commodity_from_detail_page(chrome)
+            # ite = jddr.get_jd_item_from_detail_page(chrome)
+            # helper.insert_commodity(commo)
+            # helper.insert_item(ite)
+            # 3.若此轮执行耗时超过预计时间，进行商品的删除操作。删除依据为（销量，近期访问次数）
+            # 4.检查是否满足清除次数的条件，为真则利用SQL语句集体清空
 
     @staticmethod
     def anti_detected_initial(browser: selenium.webdriver.Chrome):
@@ -103,25 +94,42 @@ class Launcher:
             button.click()
 
     @staticmethod
-    def access_jd(browser: selenium.webdriver.Chrome):
+    def access_jd(browser: selenium.webdriver.Chrome, kw_list: list):
         # 京东
-        browser.get('http://www.jd.com')
-        input_view = browser.find_element(By.ID, 'key')
-        input_view.send_keys('U盘')
-        button = browser.find_element(By.XPATH, '//*[@class=\'search-m\']').find_element(By.CLASS_NAME, 'button')
-        browser.execute_script("""   
-            if (navigator.webdriver) {
-                navigator.webdrivser = false;
-                delete navigator.webdrivser;
-                Object.defineProperty(navigator, 'webdriver', {get: () => false,});//改为Headless=false
-            }""")  # 检测无头模式，为真则做出修改
-        if button is None:
-            print('Get button failed')
-        else:
-            button.click()
+        helper = DatabaseHelper()
+        jlpr = JdListPageReader()
+        #############
+        try:
+            browser.get('http://www.jd.com')
+        except TimeoutException:
+            logging.info('Browser timeout!')
+        for kw in kw_list:
+            input_view = browser.find_element(By.ID, 'key')
+            input_view.send_keys(kw)
+            # TODO:可能出现"抱歉，没有找到与“POS机”相关的商品"
+            button = browser.find_element(By.XPATH, '//*[@class=\'search-m\']').find_element(By.CLASS_NAME, 'button')
+            browser.execute_script("""   
+                if (navigator.webdriver) {
+                    navigator.webdrivser = false;
+                    delete navigator.webdrivser;
+                    Object.defineProperty(navigator, 'webdriver', {get: () => false,});//改为Headless=false
+                }""")  # 检测无头模式，为真则做出修改
+            if button is None:
+                logging.warning('Get button failed:', browser.current_url)
+            else:
+                button.click()
+            browser.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            # TODO:初始化，设置显式等待减少加载时间。等待60条记录全出现后再读取
+            commodity_list = jlpr.get_jd_commodities_from_list_page(browser, kw)
+            helper.insert_commodities(commodity_list)
+            item_list = jlpr.get_jd_items_from_list_page(browser)
+            helper.insert_items(item_list)
+            # TODO:读取结束后翻页，记录页码
 
-    def get_commodity_type_list(self):
-        pass
+    def get_commodity_type_list(self) -> list:
+        list = []
+        # 从外部文件读取搜索列表
+        return list
 
 
 class JdDetailPageReader:

@@ -10,6 +10,7 @@ import mitmproxy.http
 from entity import Item
 from entity import Commodity
 from selenium import webdriver
+import custom_expected_conditions as CEC
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
@@ -103,10 +104,9 @@ class Launcher:
         try:
             browser.get('http://www.jd.com')
             wdw = WebDriverWait(browser, 10, 0.5)
-            wdw.until(EC.presence_of_all_elements_located(
-                (By.ID, self.__jd_search_view_id)
-            ), "Input view not appear")
-            print('found elements')
+            wdw.until(CEC.PageViewsAppear(
+                [(By.ID, self.__jd_search_view_id), (By.XPATH, self.__jd_search_button_xpath)]
+            ), "Input views not appear")
         except TimeoutException:
             logging.info('Browser timeout!')
         # for kw in kw_list:

@@ -11,12 +11,15 @@ from entity import Item
 from entity import Commodity
 from selenium import webdriver
 from selenium.webdriver.common.by import By
+from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.support.wait import WebDriverWait
 from selenium.webdriver.remote.webelement import WebElement
 
 
 class Launcher:
+    __jd_search_view_id = "key"
+    __jd_search_button_xpath = "//div[@class=\'form\']/button"
 
     def __init__(self) -> None:
         super().__init__()
@@ -81,8 +84,7 @@ class Launcher:
         # options.add_argument('headless')
         return options
 
-    @staticmethod
-    def access_taobao(browser: selenium.webdriver.Chrome):
+    def access_taobao(self, browser: selenium.webdriver.Chrome):
         # 淘宝
         browser.get('http://www.taobao.com')
         input_view = browser.find_element(By.ID, 'q')
@@ -93,38 +95,45 @@ class Launcher:
         else:
             button.click()
 
-    @staticmethod
-    def access_jd(browser: selenium.webdriver.Chrome, kw_list: list):
+    def access_jd(self, browser: selenium.webdriver.Chrome, kw_list: list):
         # 京东
         helper = DatabaseHelper()
         jlpr = JdListPageReader()
         #############
         try:
             browser.get('http://www.jd.com')
+            wdw = WebDriverWait(browser, 10, 0.5)
+            wdw.until(EC.presence_of_all_elements_located(
+                (By.ID, self.__jd_search_view_id)
+            ), "Input view not appear")
+            print('found elements')
         except TimeoutException:
             logging.info('Browser timeout!')
-        for kw in kw_list:
-            input_view = browser.find_element(By.ID, 'key')
-            input_view.send_keys(kw)
-            # TODO:可能出现"抱歉，没有找到与“POS机”相关的商品"
-            button = browser.find_element(By.XPATH, '//*[@class=\'search-m\']').find_element(By.CLASS_NAME, 'button')
-            browser.execute_script("""   
-                if (navigator.webdriver) {
-                    navigator.webdrivser = false;
-                    delete navigator.webdrivser;
-                    Object.defineProperty(navigator, 'webdriver', {get: () => false,});//改为Headless=false
-                }""")  # 检测无头模式，为真则做出修改
-            if button is None:
-                logging.warning('Get button failed:', browser.current_url)
-            else:
-                button.click()
-            browser.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            # TODO:初始化，设置显式等待减少加载时间。等待60条记录全出现后再读取
-            commodity_list = jlpr.get_jd_commodities_from_list_page(browser, kw)
-            helper.insert_commodities(commodity_list)
-            item_list = jlpr.get_jd_items_from_list_page(browser)
-            helper.insert_items(item_list)
-            # TODO:读取结束后翻页，记录页码
+        # for kw in kw_list:
+        #     input_view = browser.find_element(By.ID, self.__jd_search_view_id)
+        #     input_view.send_keys(kw)
+        #     button = browser.find_element(By.XPATH, self.__jd_search_button_xpath)
+        #     browser.execute_script("""
+        #         if (navigator.webdriver) {
+        #             navigator.webdrivser = false;
+        #             delete navigator.webdrivser;
+        #             Object.defineProperty(navigator, 'webdriver', {get: () => false,});//改为Headless=false
+        #         }""")  # 检测无头模式，为真则做出修改
+        #     if button is None:
+        #         logging.error('JD get button failed:', browser.current_url)
+        #         # TODO:通知异常
+        #         link = LinkAdministrator()
+        #         link.send_message('JD get button failed:')
+        #         return
+        #     button.click()
+        #     # TODO:等待页面加载完，可能出现"抱歉，没有找到与“POS机”相关的商品"
+        #     browser.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+        #     # TODO:初始化，设置显式等待减少加载时间。等待60条记录全出现后再读取
+        #     commodity_list = jlpr.get_jd_commodities_from_list_page(browser, kw)
+        #     helper.insert_commodities(commodity_list)
+        #     item_list = jlpr.get_jd_items_from_list_page(browser)
+        #     helper.insert_items(item_list)
+        #     # TODO:读取结束后翻页，记录页码
 
     def get_commodity_type_list(self) -> list:
         list = []
@@ -676,6 +685,11 @@ class DatabaseHelper:
                 return True
         return False
 
+
+class LinkAdministrator:
+
+    def send_message(self, msg: str):
+        pass
 
 if __name__ == '__main__':
     laun = Launcher()

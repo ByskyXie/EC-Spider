@@ -5,6 +5,7 @@ from selenium.webdriver.support import expected_conditions as EC
 
 
 class PageViewsAppear:
+    element_list = None
 
     def __init__(self, element_list: list):
         self.element_list = element_list
@@ -22,8 +23,10 @@ class ResultAllAppear:
         pass
 
     def __call__(self, driver: webdriver.Chrome):
-        ele_list = driver.find_elements(By.XPATH, launcher.JdListPageReader.jd_list_page_goods_list_xpath)
-        if launcher.JdListPageReader.jd_list_page_goods_list_amount == len(ele_list):
+        jlpr = launcher.JdListPageReader()
+        ele_list = EC.presence_of_all_elements_located(
+            (By.XPATH, jlpr.jd_list_page_goods_list_xpath)).__call__(driver)
+        if jlpr.jd_list_page_goods_list_amount == len(ele_list):
             return True
         return False
 

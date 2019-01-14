@@ -10,8 +10,9 @@ import exception
 import mitmproxy.http
 from entity import Item
 from entity import Commodity
-from selenium import webdriver
 import custom_expected_conditions as CEC
+from selenium import webdriver
+from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
@@ -20,6 +21,7 @@ from selenium.webdriver.remote.webelement import WebElement
 
 
 class Launcher:
+    __jd_max_turn_page_amount = 20
     __jd_max_wait_time = 10
     __jd_no_result_str = "没有找到"
 
@@ -35,7 +37,7 @@ class Launcher:
         :return:
         """
         with webdriver.Chrome(chrome_options=laun.chrome_option_initial()) as chrome:
-            chrome.implicitly_wait(10)  # 等待10秒
+            chrome.implicitly_wait(15)  # 等待15秒
             self.anti_detected_initial(chrome)
             # 1.根据搜索列表不断更新价格信息或是新增商品
             keyword_list = self.get_commodity_type_list()
@@ -61,7 +63,7 @@ class Launcher:
             browser is an instance of browser which includes Chrome/Edge/FireFox etc.
         :return:
         """
-        with open('anti_detect_strategy.js', 'r') as strategy:
+        with open('script/anti_detect_strategy.js', 'r') as strategy:
             str_script = strategy.readline()
             while True:
                 i = strategy.readline()
@@ -101,19 +103,21 @@ class Launcher:
         # 京东
         helper = DatabaseHelper()
         jlpr = JdListPageReader()
-        wdw = WebDriverWait(browser, self.__jd_max_wait_time, 0.5)
+        wdw = WebDriverWait(browser, self.__jd_max_wait_time, 0.4)
         #############
         try:
             browser.get('http://www.jd.com')
             wdw.until(CEC.PageViewsAppear(
-                [(By.ID, JdListPageReader.jd_search_view_id), (By.XPATH, JdListPageReader.jd_search_button_xpath)]
+                [(By.ID, jlpr.jd_search_view_id), (By.XPATH, jlpr.jd_search_button_xpath)]
             ), "Input views not appear")
         except TimeoutException:
-            logging.warning("Haven't got every views!", traceback.print_exc())
+            logging.warning("Haven't got every views!" + traceback.print_exc())
         for kw in kw_list:
-            input_view = browser.find_element(By.ID, JdListPageReader.jd_search_view_id)
+            page_num = 1
+            input_view = browser.find_element(By.ID, jlpr.jd_search_view_id)
+            input_view.clear()
             input_view.send_keys(kw)
-            button = browser.find_element(By.XPATH, JdListPageReader.jd_search_button_xpath)
+            button = browser.find_element(By.XPATH, jlpr.jd_search_button_xpath)
             browser.execute_script("""
                 if (navigator.webdriver) {
                     navigator.webdrivser = false;
@@ -121,30 +125,35 @@ class Launcher:
                     Object.defineProperty(navigator, 'webdriver', {get: () => false,});//改为Headless=false
                 }""")  # 检测无头模式，为真则做出修改
             button.click()
-            wdw.until(CEC.PageViewsAppear(
-                [(By.XPATH, JdListPageReader.jd_list_page_goods_list_xpath),
-                 (By.XPATH, JdListPageReader.jd_list_page_turn_xpath)]
-            ), "Search result not appear")
-            if self.__jd_no_result_str in browser.find_element(By.XPATH, '/html').text:
-                # TODO:出现"抱歉，没有找到与“***”相关的商品"
-                continue
-            # 跳转到页面最底部
-            browser.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            # 等待60条记录全出现后再读取
-            wdw.until(CEC.ResultAllAppear().__call__(browser))
-            # 读取价格信息并更新
-            commodity_list = jlpr.get_jd_commodities_from_list_page(browser, kw)
-            helper.insert_commodities(commodity_list)
-            item_list = jlpr.get_jd_items_from_list_page(browser)
-            helper.insert_items(item_list)
-            # TODO:读取结束后翻页，记录页码
+            while page_num <= self.__jd_max_turn_page_amount:
+                wdw.until(CEC.PageViewsAppear(
+                    [(By.XPATH, jlpr.jd_list_page_goods_list_xpath),
+                     (By.XPATH, jlpr.jd_list_page_turn_xpath)]
+                ), "Search result not appear")
+                if self.__jd_no_result_str in browser.find_element(By.XPATH, '/html').text:
+                    # 出现"抱歉，没有找到与“***”相关的商品"
+                    logging.warning("JD没有找到与[" + kw + "]相关的商品")
+                    break
+                # 跳转到页面最底部
+                browser.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+                # 等待60条记录全出现后再读取
+                wdw.until(CEC.ResultAllAppear(), "Wait all result failed.")
+                time.sleep(0.2)
+                # 读取价格信息并更新
+                commodity_list = jlpr.get_jd_commodities_from_list_page(browser, kw)
+                helper.insert_commodities(commodity_list)
+                item_list = jlpr.get_jd_items_from_list_page(browser)
+                helper.insert_items(item_list)
+                # 翻页，页码+1
+                browser.find_element(By.XPATH, '/html').send_keys(Keys.RIGHT)
+                page_num += 1
 
             # # TODO:通知异常
             # link = LinkAdministrator()
             # link.send_message('JD get button failed:')
 
     def get_commodity_type_list(self) -> list:
-        list = ['U盘']
+        list = ['U盘', '手机']
         # 从外部文件读取搜索列表
         return list
 
@@ -380,7 +389,6 @@ class JdListPageReader:
         :return:
             a commodity instance.
         """
-        # TODO:有可能长时间未响应
         goods_list = []
         if not self.is_current_page_is_jd_list(browser):
             return goods_list  # 判断是否是详情页
@@ -443,21 +451,25 @@ class JdListPageReader:
             An instance of Commodity which haven't set the value of keyword
             or None, if an error occurred.
         """
-        # 获取商品url,可能失败
-        comm = Commodity()
-        comm.item_url = self.get_jd_item_url_from_list_page(element)
-        # XXX: Keyword未指定
+        try:
+            # 获取商品url,可能失败
+            comm = Commodity()
+            comm.item_url = self.get_jd_item_url_from_list_page(element)
+            # XXX: Keyword未指定
 
-        # 获取商品title
-        comm.item_title = self.get_jd_item_name_from_list_page(element)
-        # 获取商品name
-        comm.item_name = comm.item_title
-        # 获取商品分类（列表下是不存在的）
-        # 获取店铺url
-        comm.store_url = self.get_jd_store_url_from_list_page(element)
-        # 获取店铺名
-        comm.store_name = self.get_jd_store_name_from_list_page(element)
-        # 默认访问次数为0
+            # 获取商品title
+            comm.item_title = self.get_jd_item_name_from_list_page(element)
+            # 获取商品name
+            comm.item_name = comm.item_title
+            # 获取商品分类（列表下是不存在的）
+            # 获取店铺url
+            comm.store_url = self.get_jd_store_url_from_list_page(element)
+            # 获取店铺名
+            comm.store_name = self.get_jd_store_name_from_list_page(element)
+            # 默认访问次数为0
+        except selenium.common.exceptions.NoSuchElementException:
+            logging.warning('Get single goods:' + traceback.print_exc())
+            return None
         return comm
 
     def get_jd_list_page_single_goods_items(self, element: WebElement) \
@@ -706,7 +718,7 @@ class DatabaseHelper:
             row = cursor.fetchone()
             if row is None:
                 logging.warning('Query record error at DatabaseHelper.is_item_price_changes()'
-                                '\nget row is None\n', item.__str__())
+                                '\nget row is None\n' + item.__str__())
                 # 说明之前未记录该商品信息
                 return False
             if item.price == row[4]:

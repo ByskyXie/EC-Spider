@@ -21,8 +21,8 @@ from selenium.webdriver.remote.webelement import WebElement
 
 
 class Launcher:
-    __jd_max_turn_page_amount = 20
-    __jd_max_wait_time = 10
+    __jd_max_turn_page_amount = 10
+    __jd_max_wait_time = 5
     __jd_no_result_str = "没有找到"
 
     def __init__(self) -> None:
@@ -37,7 +37,7 @@ class Launcher:
         :return:
         """
         with webdriver.Chrome(chrome_options=laun.chrome_option_initial()) as chrome:
-            chrome.implicitly_wait(15)  # 等待15秒
+            chrome.implicitly_wait(5)  # 等待5秒
             self.anti_detected_initial(chrome)
             # 1.根据搜索列表不断更新价格信息或是新增商品
             keyword_list = self.get_commodity_type_list()
@@ -103,7 +103,7 @@ class Launcher:
         # 京东
         helper = DatabaseHelper()
         jlpr = JdListPageReader()
-        wdw = WebDriverWait(browser, self.__jd_max_wait_time, 0.4)
+        wdw = WebDriverWait(browser, self.__jd_max_wait_time, 0.7)
         #############
         try:
             browser.get('http://www.jd.com')
@@ -111,7 +111,7 @@ class Launcher:
                 [(By.ID, jlpr.jd_search_view_id), (By.XPATH, jlpr.jd_search_button_xpath)]
             ), "Input views not appear")
         except TimeoutException:
-            logging.warning("Haven't got every views!" + traceback.print_exc())
+            logging.warning("Haven't got every views!" + (traceback.print_exc() or 'None'))
         for kw in kw_list:
             page_num = 1
             input_view = browser.find_element(By.ID, jlpr.jd_search_view_id)
@@ -130,24 +130,27 @@ class Launcher:
                     [(By.XPATH, jlpr.jd_list_page_goods_list_xpath),
                      (By.XPATH, jlpr.jd_list_page_turn_xpath)]
                 ), "Search result not appear")
-                if self.__jd_no_result_str in browser.find_element(By.XPATH, '/html').text:
-                    # 出现"抱歉，没有找到与“***”相关的商品"
-                    logging.warning("JD没有找到与[" + kw + "]相关的商品")
-                    break
+                try:
+                    temp = browser.find_element(By.XPATH, '//div[@class=\'notice-search\']')
+                    if temp is not None and self.__jd_no_result_str in temp.text:
+                        # 出现"抱歉，没有找到与“***”相关的商品"
+                        logging.warning("JD没有找到与[" + kw + "]相关的商品", browser.current_url)
+                        break
+                except selenium.common.exceptions.NoSuchElementException:
+                    pass
                 # 跳转到页面最底部
                 browser.execute_script("window.scrollTo(0, document.body.scrollHeight);")
                 # 等待60条记录全出现后再读取
                 wdw.until(CEC.ResultAllAppear(), "Wait all result failed.")
-                time.sleep(0.2)
+                time.sleep(0.4)
                 # 读取价格信息并更新
                 commodity_list = jlpr.get_jd_commodities_from_list_page(browser, kw)
                 helper.insert_commodities(commodity_list)
                 item_list = jlpr.get_jd_items_from_list_page(browser)
                 helper.insert_items(item_list)
                 # 翻页，页码+1
-                browser.find_element(By.XPATH, '/html').send_keys(Keys.RIGHT)
+                browser.find_element(By.XPATH, '/*').send_keys(Keys.RIGHT)
                 page_num += 1
-
             # # TODO:通知异常
             # link = LinkAdministrator()
             # link.send_message('JD get button failed:')
@@ -468,7 +471,7 @@ class JdListPageReader:
             comm.store_name = self.get_jd_store_name_from_list_page(element)
             # 默认访问次数为0
         except selenium.common.exceptions.NoSuchElementException:
-            logging.warning('Get single goods:' + traceback.print_exc())
+            logging.warning('Get single goods, No such element:' + (traceback.print_exc() or 'None'))
             return None
         return comm
 
@@ -548,11 +551,11 @@ class DatabaseHelper:
                         "all_specification, spec1, spec2, spec3, spec4, spec5, spec_other) " \
                         "VALUES ('%s','%s',%f,%f,%f,%f,'%s',%d,'%d',%f" \
                         ",'%s','%s','%s','%s','%s','%s','%s');"
-    __sql_insert_items = "INSERT IGNORE INTO ITEM(item_url_md5,item_url,data_begin_time,data_end_time," \
-                         "item_price,plus_price, ticket, inventory, sales_amount, transport_fare," \
-                         "all_specification, spec1, spec2, spec3, spec4, spec5, spec_other) " \
-                         "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s" \
-                         ",%s,%s,%s,%s,%s,%s,%s);"  # insert_many需要%s占位，可以用REPLACE关键字
+    # __sql_insert_items = "INSERT IGNORE INTO ITEM(item_url_md5,item_url,data_begin_time,data_end_time," \
+    #                      "item_price,plus_price, ticket, inventory, sales_amount, transport_fare," \
+    #                      "all_specification, spec1, spec2, spec3, spec4, spec5, spec_other) " \
+    #                      "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s" \
+    #                      ",%s,%s,%s,%s,%s,%s,%s);"  # insert_many需要%s占位，可以用REPLACE关键字
     __sql_query_commodity = "SELECT * FROM commodity " \
                             "WHERE item_url_md5='%s';"
     __sql_query_item = "SELECT * FROM item " \
@@ -654,24 +657,20 @@ class DatabaseHelper:
         if type(item_list) is not list or len(item_list) == 0 \
                 or type(item_list[0]) is not Item:
             return
-        with self.__connection.cursor() as cursor:
-            try:
-                cursor.executemany(self.__sql_insert_items, self.__general_nesting_item_list(item_list))
-                assert cursor.rowcount == len(item_list), 'Not all items insert success.'
-                self.__connection.commit()
-            except Exception:
-                logging.info('Insert items occurred error.', traceback.print_exc())
-
-    @staticmethod
-    def __general_nesting_item_list(item_list: list) -> list:
-        nesting_list = []
         for item in item_list:
-            nesting_list.append(
-                (item.item_url_md5, item.url, item.data_begin_time, item.data_end_time,
-                 item.price, item.plus_price, item.ticket, item.inventory, item.sales_amount,
-                 item.transport_fare, item.all_specification, item.spec1, item.spec2,
-                 item.spec3, item.spec4, item.spec5, item.spec_other))
-        return nesting_list
+            # 逐一校验插入
+            self.insert_item(item)
+
+    # @staticmethod
+    # def __general_nesting_item_list(item_list: list) -> list:
+    #     nesting_list = []
+    #     for item in item_list:
+    #         nesting_list.append(
+    #             (item.item_url_md5, item.url, item.data_begin_time, item.data_end_time,
+    #              item.price, item.plus_price, item.ticket, item.inventory, item.sales_amount,
+    #              item.transport_fare, item.all_specification, item.spec1, item.spec2,
+    #              item.spec3, item.spec4, item.spec5, item.spec_other))
+    #     return nesting_list
 
     def insert_item(self, item: Item):
         """
@@ -717,7 +716,7 @@ class DatabaseHelper:
             cursor.execute(self.__sql_query_item % (item.item_url_md5,))
             row = cursor.fetchone()
             if row is None:
-                logging.warning('Query record error at DatabaseHelper.is_item_price_changes()'
+                logging.info('Query record error at DatabaseHelper.is_item_price_changes()'
                                 '\nget row is None\n' + item.__str__())
                 # 说明之前未记录该商品信息
                 return False

@@ -1,5 +1,6 @@
 import sys
 import time
+import json
 import hashlib
 import logging
 import pymysql
@@ -19,8 +20,8 @@ from selenium.webdriver.remote.webelement import WebElement
 
 
 class Launcher:
-    __jd_search_view_id = "key"
-    __jd_search_button_xpath = "//div[@class=\'form\']/button"
+    __jd_max_wait_time = 10
+    __jd_no_result_str = "没有找到"
 
     def __init__(self) -> None:
         super().__init__()
@@ -100,43 +101,50 @@ class Launcher:
         # 京东
         helper = DatabaseHelper()
         jlpr = JdListPageReader()
+        wdw = WebDriverWait(browser, self.__jd_max_wait_time, 0.5)
         #############
         try:
             browser.get('http://www.jd.com')
-            wdw = WebDriverWait(browser, 10, 0.5)
             wdw.until(CEC.PageViewsAppear(
-                [(By.ID, self.__jd_search_view_id), (By.XPATH, self.__jd_search_button_xpath)]
+                [(By.ID, JdListPageReader.jd_search_view_id), (By.XPATH, JdListPageReader.jd_search_button_xpath)]
             ), "Input views not appear")
         except TimeoutException:
-            logging.info('Browser timeout!')
-        # for kw in kw_list:
-        #     input_view = browser.find_element(By.ID, self.__jd_search_view_id)
-        #     input_view.send_keys(kw)
-        #     button = browser.find_element(By.XPATH, self.__jd_search_button_xpath)
-        #     browser.execute_script("""
-        #         if (navigator.webdriver) {
-        #             navigator.webdrivser = false;
-        #             delete navigator.webdrivser;
-        #             Object.defineProperty(navigator, 'webdriver', {get: () => false,});//改为Headless=false
-        #         }""")  # 检测无头模式，为真则做出修改
-        #     if button is None:
-        #         logging.error('JD get button failed:', browser.current_url)
-        #         # TODO:通知异常
-        #         link = LinkAdministrator()
-        #         link.send_message('JD get button failed:')
-        #         return
-        #     button.click()
-        #     # TODO:等待页面加载完，可能出现"抱歉，没有找到与“POS机”相关的商品"
-        #     browser.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-        #     # TODO:初始化，设置显式等待减少加载时间。等待60条记录全出现后再读取
-        #     commodity_list = jlpr.get_jd_commodities_from_list_page(browser, kw)
-        #     helper.insert_commodities(commodity_list)
-        #     item_list = jlpr.get_jd_items_from_list_page(browser)
-        #     helper.insert_items(item_list)
-        #     # TODO:读取结束后翻页，记录页码
+            logging.warning("Haven't got every views!", traceback.print_exc())
+        for kw in kw_list:
+            input_view = browser.find_element(By.ID, JdListPageReader.jd_search_view_id)
+            input_view.send_keys(kw)
+            button = browser.find_element(By.XPATH, JdListPageReader.jd_search_button_xpath)
+            browser.execute_script("""
+                if (navigator.webdriver) {
+                    navigator.webdrivser = false;
+                    delete navigator.webdrivser;
+                    Object.defineProperty(navigator, 'webdriver', {get: () => false,});//改为Headless=false
+                }""")  # 检测无头模式，为真则做出修改
+            button.click()
+            wdw.until(CEC.PageViewsAppear(
+                [(By.XPATH, JdListPageReader.jd_list_page_goods_list_xpath),
+                 (By.XPATH, JdListPageReader.jd_list_page_turn_xpath)]
+            ), "Search result not appear")
+            if self.__jd_no_result_str in browser.find_element(By.XPATH, '/html').text:
+                # TODO:出现"抱歉，没有找到与“***”相关的商品"
+                continue
+            # 跳转到页面最底部
+            browser.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            # 等待60条记录全出现后再读取
+            wdw.until(CEC.ResultAllAppear().__call__(browser))
+            # 读取价格信息并更新
+            commodity_list = jlpr.get_jd_commodities_from_list_page(browser, kw)
+            helper.insert_commodities(commodity_list)
+            item_list = jlpr.get_jd_items_from_list_page(browser)
+            helper.insert_items(item_list)
+            # TODO:读取结束后翻页，记录页码
+
+            # # TODO:通知异常
+            # link = LinkAdministrator()
+            # link.send_message('JD get button failed:')
 
     def get_commodity_type_list(self) -> list:
-        list = []
+        list = ['U盘']
         # 从外部文件读取搜索列表
         return list
 
@@ -317,7 +325,7 @@ class JdDetailPageReader:
 
 
 class JdListPageReader:
-
+    __jd_list_page_goods_list_amount = 60  # TODO：后期可以通过读取加载完成页面的实际显示数量动态调整
     __jd_sales_amount_limit = 3000  # 高于该销量的商品才记录
     # 商品属性对应xpath 考虑优先从外部文本文件读入，方便服务器端维护
     __jd_list_page_detect = "//div[@id=\'J_main\']//div[@id=\'J_goodsList\']"
@@ -330,13 +338,36 @@ class JdListPageReader:
     __jd_list_page_sales_amount_xpath = ".//div[@class=\'p-commit\']/strong/a"  # 销量
     __jd_list_page_store_name_xpath = ".//div[@class=\'p-shop\']/span/a"  # 店铺名
     __jd_list_page_store_url_xpath = ".//div[@class=\'p-shop\']/span/a"  # 店铺url
+    # 供外部接口调用
+    __jd_search_view_id = "key"
+    __jd_search_button_xpath = "//div[@class=\'form\']/button"
 
     def __init__(self) -> None:
         super().__init__()
 
     @property
+    def jd_list_page_goods_list_amount(self):
+        return self.__jd_list_page_goods_list_amount
+
+    @property
     def jd_sales_amount_limit(self):
         return self.__jd_sales_amount_limit
+
+    @property
+    def jd_search_view_id(self):
+        return self.__jd_search_view_id
+
+    @property
+    def jd_list_page_turn_xpath(self):
+        return self.__jd_list_page_turn_xpath
+
+    @property
+    def jd_search_button_xpath(self):
+        return self.__jd_search_button_xpath
+
+    @property
+    def jd_list_page_goods_list_xpath(self):
+        return self.__jd_list_page_goods_list_xpath
 
     def get_jd_commodities_from_list_page(self, browser: selenium.webdriver.Chrome, keyword: str) -> list:
         """

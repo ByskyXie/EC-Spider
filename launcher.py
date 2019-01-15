@@ -21,9 +21,10 @@ from selenium.webdriver.remote.webelement import WebElement
 
 
 class Launcher:
-    __jd_max_turn_page_amount = 10
-    __jd_max_wait_time = 5
-    __jd_no_result_str = "没有找到"
+    __jd_max_turn_page_amount = 20  # 对于某个关键字最大翻页次数
+    __jd_max_wait_time = 5  # 网页加载最大等待时间
+    __jd_no_result_str = "没有找到"  # 无结果页面关键字
+    __round_begin_time = time.time()  # 一轮爬虫开始时间
 
     def __init__(self) -> None:
         super().__init__()
@@ -36,6 +37,7 @@ class Launcher:
             ec_list:
         :return:
         """
+        self.__round_begin_time = time.time()  # 计时开始
         with webdriver.Chrome(chrome_options=laun.chrome_option_initial()) as chrome:
             chrome.implicitly_wait(5)  # 等待5秒
             self.anti_detected_initial(chrome)
@@ -53,6 +55,8 @@ class Launcher:
             # helper.insert_item(ite)
             # 3.若此轮执行耗时超过预计时间，进行商品的删除操作。删除依据为（销量，近期访问次数）
             # 4.检查是否满足清除次数的条件，为真则利用SQL语句集体清空
+        # 记录爬虫总使用时间
+        self.output_spider_state()
 
     @staticmethod
     def anti_detected_initial(browser: selenium.webdriver.Chrome):
@@ -154,6 +158,22 @@ class Launcher:
             # # TODO:通知异常
             # link = LinkAdministrator()
             # link.send_message('JD get button failed:')
+
+    def output_spider_state(self):
+        with open('spiderState.txt', 'w') as output_file:
+            # 开始时间
+            out_str = '[Spider begin time]:' + time.strftime(
+                "%Y-%m-%d %H:%M:%S", time.localtime(self.__round_begin_time))
+            output_file.writelines(out_str)
+            # 结束时间
+            out_str = '[Spider end time]:' + time.strftime(
+                "%Y-%m-%d %H:%M:%S", time.localtime(time.time()))
+            output_file.writelines(out_str)
+            # 时长
+            time_spent = int(time.time() - self.__round_begin_time)
+            out_str = '[Spider time spent]:' + \
+                      ('%d:%d:%d' % (time_spent/3600, time_spent/60 % 60, time_spent % 60))
+            output_file.writelines(out_str)
 
     def get_commodity_type_list(self) -> list:
         list = ['U盘', '手机']
@@ -420,7 +440,6 @@ class JdListPageReader:
         :return:
         """
         item_list = []
-        # TODO:有可能长时间未响应
         if not self.is_current_page_is_jd_list(browser):
             return item_list  # 判断是否是详情页
         goods_dom_list = self.get_jd_list_page_goods_list(browser)

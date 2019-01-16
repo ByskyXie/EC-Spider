@@ -1,6 +1,7 @@
 import sys
 import time
 import json
+import smtplib
 import hashlib
 import logging
 import pymysql
@@ -10,6 +11,8 @@ import exception
 import mitmproxy.http
 from entity import Item
 from entity import Commodity
+from email.header import Header
+from email.mime.text import MIMEText
 import custom_expected_conditions as CEC
 from selenium import webdriver
 from selenium.webdriver.common.keys import Keys
@@ -748,9 +751,18 @@ class DatabaseHelper:
 
 
 class LinkAdministrator:
+    __host = 'smtp.qq.com'
+    __port = 465
+    __reciver = 'byskyxie@qq.com'
 
-    def send_message(self, msg: str):
-        pass
+    def send_message(self, title: str, msg: str, user: str, pwd: str):
+        message = MIMEText(msg, 'txt', 'utf-8')
+        message['Subject'] = Header(title, 'utf-8')
+        smtp = smtplib.SMTP()
+        smtp.connect(self.__host)
+        smtp.login(user, pwd)
+        smtp.sendmail(user, self.__reciver, message.as_string())
+        smtp.quit()
 
 if __name__ == '__main__':
     laun = Launcher()

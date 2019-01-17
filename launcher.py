@@ -28,11 +28,12 @@ class Launcher:
     __jd_max_wait_time = 5  # 网页加载最大等待时间
     __jd_no_result_str = "没有找到"  # 无结果页面关键字
     __round_begin_time = time.time()  # 一轮爬虫开始时间
+    __round_max_duration = 24*60*60  # 一轮最大可接受时间
 
     def __init__(self) -> None:
         super().__init__()
 
-    def launch_spider(self):
+    def launch_spider(self, auto_mode=False):
         """
         method:
             The EC-Spider's entrance. you could selected scratch TaoBao/Tmall or jd.
@@ -40,26 +41,34 @@ class Launcher:
             ec_list:
         :return:
         """
-        self.__round_begin_time = time.time()  # 计时开始
-        with webdriver.Chrome(chrome_options=laun.chrome_option_initial()) as chrome:
-            chrome.implicitly_wait(5)  # 等待5秒
-            self.anti_detected_initial(chrome)
-            # 1.根据搜索列表不断更新价格信息或是新增商品
-            keyword_list = self.get_commodity_type_list()
-            # 访问京东
-            self.access_jd(chrome, keyword_list)
-            # 访问淘宝
+        while True:
+            self.__round_begin_time = time.time()  # 计时开始
+            with webdriver.Chrome(chrome_options=laun.chrome_option_initial()) as chrome:
+                chrome.implicitly_wait(5)  # 等待5秒
+                self.anti_detected_initial(chrome)
+                # 1.根据搜索列表不断更新价格信息或是新增商品
+                keyword_list = self.get_commodity_type_list()
+                # 访问京东
+                self.access_jd(chrome, keyword_list)
+                # 访问淘宝
 
-            # 2.针对未更新但已有记录的商品，也更新
-            # jddr = JdDetailPageReader()
-            # commo = jddr.get_jd_commodity_from_detail_page(chrome)
-            # ite = jddr.get_jd_item_from_detail_page(chrome)
-            # helper.insert_commodity(commo)
-            # helper.insert_item(ite)
-            # 3.若此轮执行耗时超过预计时间，进行商品的删除操作。删除依据为（销量，近期访问次数）
-            # 4.检查是否满足清除次数的条件，为真则利用SQL语句集体清空
-        # 记录爬虫总使用时间
-        self.output_spider_state()
+                # 2.针对未更新但已有记录的商品，也更新
+                # jddr = JdDetailPageReader()
+                # commo = jddr.get_jd_commodity_from_detail_page(chrome)
+                # ite = jddr.get_jd_item_from_detail_page(chrome)
+                # helper.insert_commodity(commo)
+                # helper.insert_item(ite)
+                # 3.若此轮执行耗时超过预计时间，进行商品的删除操作。删除依据为（销量，近期访问次数）
+                # 4.检查是否满足清除次数的条件，为真则利用SQL语句集体清空
+            # 记录爬虫总使用时间
+            self.output_spider_state()
+            if not auto_mode:
+                break
+            blank_time = self.__round_max_duration - time.time() + self.__round_begin_time
+            if blank_time > 0:
+                # 说明超前完成任务
+                time.sleep(blank_time)
+
 
     @staticmethod
     def anti_detected_initial(browser: selenium.webdriver.Chrome):
@@ -177,6 +186,7 @@ class Launcher:
             out_str = '[Spider time spent]:' + \
                       ('%d:%d:%d' % (time_spent/3600, time_spent/60 % 60, time_spent % 60))
             output_file.writelines(out_str)
+            output_file.writelines('[Max Allow Duration]:' + str(self.__round_max_duration))
 
     def get_commodity_type_list(self) -> list:
         list = ['U盘', '手机']

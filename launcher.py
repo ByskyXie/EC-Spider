@@ -29,6 +29,8 @@ class Launcher:
     __jd_no_result_str = "没有找到"  # 无结果页面关键字
     __round_begin_time = time.time()  # 一轮爬虫开始时间
     __round_max_duration = 24*60*60  # 一轮最大可接受时间
+    __jd_max_duration = __round_max_duration * 1  # 京东分配到的时间
+    __tb_max_duration = __round_max_duration * 0
 
     def __init__(self) -> None:
         super().__init__()
@@ -117,6 +119,8 @@ class Launcher:
 
     def access_jd(self, browser: selenium.webdriver.Chrome, kw_list: list):
         # 京东
+        position = 0
+        jd_begin_time = time.time()
         helper = DatabaseHelper()
         jlpr = JdListPageReader()
         wdw = WebDriverWait(browser, self.__jd_max_wait_time, 0.7)
@@ -129,6 +133,7 @@ class Launcher:
         except TimeoutException:
             logging.warning("Haven't got every views!" + (traceback.print_exc() or 'None'))
         for kw in kw_list:
+            position += 1  # 当前kw位置
             page_num = 1
             input_view = browser.find_element(By.ID, jlpr.jd_search_view_id)
             input_view.clear()
@@ -142,6 +147,10 @@ class Launcher:
                 }""")  # 检测无头模式，为真则做出修改
             button.click()
             while page_num <= self.__jd_max_turn_page_amount:
+                if self.__jd_max_duration * position / len(kw_list) < (time.time() - jd_begin_time):
+                    # 控制进度。说明该kw超时了，以后的页面不再读取
+                    logging.info('[Single keyword running timeout]:' + kw + ' page:' + page_num)
+                    break
                 wdw.until(CEC.PageViewsAppear(
                     [(By.XPATH, jlpr.jd_list_page_goods_list_xpath),
                      (By.XPATH, jlpr.jd_list_page_turn_xpath)]
@@ -170,6 +179,9 @@ class Launcher:
             # # TODO:通知异常
             # link = LinkAdministrator()
             # link.send_message('JD get button failed:')
+
+    def get_time_spent_percent(self) -> float:
+        return (time.time() - self.__round_begin_time)/self.__round_max_duration
 
     def output_spider_state(self):
         with open('spiderState.txt', 'w') as output_file:

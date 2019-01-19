@@ -45,7 +45,7 @@ class Launcher:
         """
         while True:
             self.__round_begin_time = time.time()  # 计时开始
-            with webdriver.Chrome(chrome_options=laun.chrome_option_initial()) as chrome:
+            with webdriver.Chrome(chrome_options=self.chrome_option_initial()) as chrome:
                 chrome.implicitly_wait(5)  # 等待5秒
                 self.anti_detected_initial(chrome)
                 # 1.根据搜索列表不断更新价格信息或是新增商品
@@ -53,13 +53,7 @@ class Launcher:
                 # 访问京东
                 self.access_jd(chrome, keyword_list)
                 # 访问淘宝
-
-                # 2.针对未更新但已有记录的商品，也更新
-                # jddr = JdDetailPageReader()
-                # commo = jddr.get_jd_commodity_from_detail_page(chrome)
-                # ite = jddr.get_jd_item_from_detail_page(chrome)
-                # helper.insert_commodity(commo)
-                # helper.insert_item(ite)
+                # self.access_taobao(chrome, keyword_list)
                 # 3.若此轮执行耗时超过预计时间，进行商品的删除操作。删除依据为（销量，近期访问次数）
                 # 4.检查是否满足清除次数的条件，为真则利用SQL语句集体清空
             # 记录爬虫总使用时间
@@ -106,7 +100,7 @@ class Launcher:
         # options.add_argument('headless')
         return options
 
-    def access_taobao(self, browser: selenium.webdriver.Chrome):
+    def access_taobao(self, browser: selenium.webdriver.Chrome, kw_list: list):
         # 淘宝
         browser.get('http://www.taobao.com')
         input_view = browser.find_element(By.ID, 'q')
@@ -176,12 +170,24 @@ class Launcher:
                 # 翻页，页码+1
                 browser.find_element(By.XPATH, '/*').send_keys(Keys.RIGHT)
                 page_num += 1
+            # 2.针对未更新但已有记录的商品，也更新
+            # TODO:一个关键字已完毕，针对已记录且未在当日搜索结果的商品，另起一个线程处理该情况
+            self.refresh_database_info(kw)
             # # TODO:通知异常
             # link = LinkAdministrator()
             # link.send_message('JD get button failed:')
 
     def get_time_spent_percent(self) -> float:
         return (time.time() - self.__round_begin_time)/self.__round_max_duration
+
+    def refresh_database_info(self, keyword: str):
+        begin_time = time.time()
+        helper = DatabaseHelper()
+        item_list = helper.query_refresh_before_date_items(self.__round_begin_time)
+        for item in item_list:
+            # TODO:访问详情页，效率会特别低。
+            pass
+
 
     def output_spider_state(self):
         with open('spiderState.txt', 'w') as output_file:
@@ -609,6 +615,8 @@ class DatabaseHelper:
     __sql_update_item = "UPDATE item " \
                         "SET data_end_time=%f " \
                         "WHERE item_url_md5='%s' and data_begin_time=%f and item_price=%f ;"
+    __sql_before_date = "SELECT * FROM item" \
+                        "WHERE "
     __connection = None
 
     def __init__(self):
@@ -650,8 +658,12 @@ class DatabaseHelper:
             return False
         return True
 
-    def refresh_items(self):
-        pass  # TODO:针对已记录且未在当日搜索结果的商品，应该另起一个线程处理该情况
+    def query_refresh_before_date_items(self, time_stamp=time.time()) -> list:
+        """
+        :param time_stamp:
+        :return: list. and the item is an tuple witch order same Database table.
+        """
+        return self.__connection.query(self.__sql_before_date % ())
 
     def insert_commodities(self, commodity_list: list):
         if type(commodity_list) is not list or len(commodity_list) == 0 \

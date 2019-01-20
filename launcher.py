@@ -3,6 +3,7 @@ import time
 import json
 import smtplib
 import hashlib
+import threading
 import logging
 import pymysql
 import selenium
@@ -32,6 +33,8 @@ class Launcher:
     __jd_max_duration = __round_max_duration * 1  # 京东分配到的时间
     __tb_max_duration = __round_max_duration * 0
 
+    __thread_pool = []  # 线程池
+
     def __init__(self) -> None:
         super().__init__()
 
@@ -46,6 +49,7 @@ class Launcher:
         while True:
             self.__round_begin_time = time.time()  # 计时开始
             with webdriver.Chrome(chrome_options=self.chrome_option_initial()) as chrome:
+                self.__thread_pool = []  # 清空线程池
                 chrome.implicitly_wait(5)  # 等待5秒
                 self.anti_detected_initial(chrome)
                 # 1.根据搜索列表不断更新价格信息或是新增商品
@@ -56,6 +60,9 @@ class Launcher:
                 # self.access_taobao(chrome, keyword_list)
                 # 3.若此轮执行耗时超过预计时间，进行商品的删除操作。删除依据为（销量，近期访问次数）
                 # 4.检查是否满足清除次数的条件，为真则利用SQL语句集体清空
+            # 等待一轮结束
+            for thr in self.__thread_pool:
+                thr.join()
             # 记录爬虫总使用时间
             self.output_spider_state()
             if not auto_mode:
@@ -64,6 +71,8 @@ class Launcher:
             if blank_time > 0:
                 # 说明超前完成任务
                 time.sleep(blank_time)
+            else:
+                logging.warning('Full spent timeout:' + str(- blank_time) + 'Second.')
 
 
     @staticmethod
@@ -117,7 +126,6 @@ class Launcher:
         jd_begin_time = time.time()
         helper = DatabaseHelper()
         jlpr = JdListPageReader()
-        chrome_backtask = webdriver.Chrome()
         wdw = WebDriverWait(browser, self.__jd_max_wait_time, 0.7)
         #############
         try:
@@ -139,7 +147,7 @@ class Launcher:
                     navigator.webdrivser = false;
                     delete navigator.webdrivser;
                     Object.defineProperty(navigator, 'webdriver', {get: () => false,});//改为Headless=false
-                }""")  # 检测无头模式，为真则做出修改
+                }""")  # TODO:检测无头模式，为真则做出修改
             button.click()
             while page_num <= self.__jd_max_turn_page_amount:
                 if self.__jd_max_duration * position / len(kw_list) < (time.time() - jd_begin_time):
@@ -172,25 +180,30 @@ class Launcher:
                 browser.find_element(By.XPATH, '/*').send_keys(Keys.RIGHT)
                 page_num += 1
             # 2.针对未更新但已有记录的商品，也更新
-            # TODO:一个关键字已完毕，针对已记录且未在当日搜索结果的商品，另起一个线程处理该情况
-            self.refresh_database_info(chrome_backtask, kw)
-            # # TODO:通知异常
+            # 一个关键字已完毕，针对已记录且未在当日搜索结果的商品，另起线程处理该情况
+            t = threading.Thread(target=self.refresh_database_info, args=(kw,))
+            t.start()
+            # TODO:通知异常
             # link = LinkAdministrator()
             # link.send_message('JD get button failed:')
-        chrome_backtask.close()
 
     def get_time_spent_percent(self) -> float:
         return (time.time() - self.__round_begin_time)/self.__round_max_duration
 
-    def refresh_database_info(self, browser: webdriver.Chrome, keyword: str):
+    def refresh_database_info(self, keyword: str):
         begin_time = time.time()
         jdpr = JdDetailPageReader()
         helper = DatabaseHelper()
-        item_list = helper.query_refresh_before_date_items(self.__round_begin_time)
-        for item in item_list:
-            # TODO:访问详情页，效率会特别低。
-            browser.get(item[1])
-
+        item_list = helper.query_refresh_before_date_items(self.__round_begin_time, keyword)
+        with webdriver.Chrome(chrome_options=self.chrome_option_initial()) as chrome:
+            wdw = WebDriverWait(chrome, self.__jd_max_wait_time)
+            for item in item_list:
+                # TODO:设立时间标志，超时自行退出(访问详情页，效率会特别低)
+                chrome.get(item[1])
+                wdw.until(EC.presence_of_element_located((By.XPATH, jdpr.jd_detail_page_detect))
+                          , "[Thread detail page]: wait timeout.")
+                item = jdpr.read_item(chrome)
+                helper.insert_item(item)
 
     def output_spider_state(self):
         with open('spiderState.txt', 'w') as output_file:
@@ -231,6 +244,10 @@ class JdDetailPageReader:
 
     def __init__(self) -> None:
         super().__init__()
+
+    @property
+    def jd_detail_page_detect(self):
+        return self.__jd_detail_page_detect
 
     def read_commodity(self, browser: selenium.webdriver.Chrome) -> (Commodity, None):
         """
@@ -593,37 +610,56 @@ class JdListPageReader:
 
 
 class DatabaseHelper:
-    __sql_insert_commodity = "INSERT INTO COMMODITY(item_url_md5,item_url, item_title," \
-                             "item_name, item_type, keyword, store_name, store_url, access_num) " \
-                             "VALUES ('%s','%s','%s','%s','%s','%s','%s','%s',%d);"
-    __sql_insert_commodities = "INSERT IGNORE INTO COMMODITY(item_url_md5,item_url, item_title," \
-                               "item_name, item_type, keyword, store_name, store_url, access_num) " \
-                               "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s);"  # # insert_many需要%s占位,IGNORE/REPLACE关键字
-    __sql_insert_item = "INSERT INTO ITEM(item_url_md5,item_url,data_begin_time,data_end_time," \
-                        "item_price,plus_price, ticket, inventory, sales_amount, transport_fare," \
-                        "all_specification, spec1, spec2, spec3, spec4, spec5, spec_other) " \
-                        "VALUES ('%s','%s',%f,%f,%f,%f,'%s',%d,'%d',%f" \
-                        ",'%s','%s','%s','%s','%s','%s','%s');"
-    # __sql_insert_items = "INSERT IGNORE INTO ITEM(item_url_md5,item_url,data_begin_time,data_end_time," \
-    #                      "item_price,plus_price, ticket, inventory, sales_amount, transport_fare," \
-    #                      "all_specification, spec1, spec2, spec3, spec4, spec5, spec_other) " \
-    #                      "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s" \
-    #                      ",%s,%s,%s,%s,%s,%s,%s);"  # insert_many需要%s占位，可以用REPLACE关键字
-    __sql_query_commodity = "SELECT * FROM commodity " \
-                            "WHERE item_url_md5='%s';"
-    __sql_query_item = "SELECT * FROM item " \
-                       "WHERE item_url_md5='%s' " \
-                       "ORDER BY data_begin_time DESC " \
-                       "LIMIT 1;"  # 选取最顶上一条记录即可
-    __sql_update_item = "UPDATE item " \
-                        "SET data_end_time=%f " \
-                        "WHERE item_url_md5='%s' and data_begin_time=%f and item_price=%f ;"
-    __sql_before_date = "SELECT DISTINCT t1.item_url,sales_amount,access_num " \
-                        "FROM item,(SELECT item_url_md5,item_url,access_num FROM commodity) as t1 " \
-                        "WHERE item.item_url_md5 NOT IN (" \
-                        "  SELECT item_url_md5 " \
-                        "  FROM item " \
-                        "  WHERE data_end_time > %f) AND item.item_url_md5 = t1.item_url_md5;"
+    __sql_insert_commodity = \
+        "INSERT INTO COMMODITY(item_url_md5,item_url, item_title," \
+        "item_name, item_type, keyword, store_name, store_url, access_num) " \
+        "VALUES ('%s','%s','%s','%s','%s','%s','%s','%s',%d);"
+    __sql_insert_commodities = \
+        "INSERT IGNORE INTO COMMODITY(item_url_md5,item_url, item_title," \
+        "item_name, item_type, keyword, store_name, store_url, access_num) " \
+        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s);"  # # insert_many需要%s占位,IGNORE/REPLACE关键字
+    __sql_insert_item = \
+        "INSERT INTO ITEM(item_url_md5,item_url,data_begin_time,data_end_time," \
+        "item_price,plus_price, ticket, inventory, sales_amount, transport_fare," \
+        "all_specification, spec1, spec2, spec3, spec4, spec5, spec_other) " \
+        "VALUES ('%s','%s',%f,%f,%f,%f,'%s',%d,'%d',%f" \
+        ",'%s','%s','%s','%s','%s','%s','%s');"
+    # __sql_insert_items = \
+    #     "INSERT IGNORE INTO ITEM(item_url_md5,item_url,data_begin_time,data_end_time," \
+    #     "item_price,plus_price, ticket, inventory, sales_amount, transport_fare," \
+    #     "all_specification, spec1, spec2, spec3, spec4, spec5, spec_other) " \
+    #     "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s" \
+    #     ",%s,%s,%s,%s,%s,%s,%s);"  # insert_many需要%s占位，可以用REPLACE关键字
+    __sql_query_commodity = \
+        "SELECT * FROM commodity " \
+        "WHERE item_url_md5='%s';"
+    __sql_query_item = \
+        "SELECT * FROM item " \
+        "WHERE item_url_md5='%s' " \
+        "ORDER BY data_begin_time DESC " \
+        "LIMIT 1;"  # 选取最顶上一条记录即可
+    __sql_update_item = \
+        "UPDATE item " \
+        "SET data_end_time=%f " \
+        "WHERE item_url_md5='%s' and data_begin_time=%f and item_price=%f ;"
+    __sql_before_date = \
+        "SELECT DISTINCT t1.item_url,sales_amount,access_num " \
+        "FROM item,(SELECT item_url_md5,item_url,access_num FROM commodity) as t1 " \
+        "WHERE item.item_url_md5 NOT IN (" \
+        "  SELECT item_url_md5 " \
+        "  FROM item " \
+        "  WHERE data_end_time > %f) " \
+        "AND item.item_url_md5 = t1.item_url_md5 " \
+        "ORDER BY access_num DESC, sales_amount DESC;"  # 所给日期后均未更新的商品
+    __sql_keyword_before_date = \
+        "SELECT DISTINCT t1.item_url,sales_amount,access_num " \
+        "FROM item,(SELECT item_url_md5,item_url,access_num,keyword FROM commodity) as t1 " \
+        "WHERE item.item_url_md5 NOT IN (" \
+        "  SELECT item_url_md5 " \
+        "  FROM item " \
+        "  WHERE data_end_time > %f) " \
+        "AND item.item_url_md5 = t1.item_url_md5 AND t1.keyword=%s " \
+        "ORDER BY access_num DESC, sales_amount DESC;"  # 所给日期后均未更新且关键字为%s的商品
     __connection = None
 
     def __init__(self):
@@ -665,12 +701,18 @@ class DatabaseHelper:
             return False
         return True
 
-    def query_refresh_before_date_items(self, time_stamp=time.time()) -> list:
+    def query_refresh_before_date_items(self, time_stamp=time.time(), keyword=None) -> tuple:
         """
         :param time_stamp:
+        :param keyword:
         :return: list. and the item is an tuple (item_url,sales_amount,access_num).
         """
-        return self.__connection.query(self.__sql_before_date % time_stamp)
+        with self.__connection.cursor() as cursor:
+            if keyword is None:
+                cursor.execute(self.__sql_before_date % time_stamp)
+            else:  # 给出关键字限定
+                cursor.execute(self.__sql_keyword_before_date % (time_stamp, keyword))
+            return cursor.fetchall()
 
     def insert_commodities(self, commodity_list: list):
         if type(commodity_list) is not list or len(commodity_list) == 0 \

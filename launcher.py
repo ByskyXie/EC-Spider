@@ -618,8 +618,12 @@ class DatabaseHelper:
     __sql_update_item = "UPDATE item " \
                         "SET data_end_time=%f " \
                         "WHERE item_url_md5='%s' and data_begin_time=%f and item_price=%f ;"
-    __sql_before_date = "SELECT * FROM item" \
-                        "WHERE "
+    __sql_before_date = "SELECT DISTINCT t1.item_url,sales_amount,access_num " \
+                        "FROM item,(SELECT item_url_md5,item_url,access_num FROM commodity) as t1 " \
+                        "WHERE item.item_url_md5 NOT IN (" \
+                        "  SELECT item_url_md5 " \
+                        "  FROM item " \
+                        "  WHERE data_end_time > %f) AND item.item_url_md5 = t1.item_url_md5;"
     __connection = None
 
     def __init__(self):
@@ -664,9 +668,9 @@ class DatabaseHelper:
     def query_refresh_before_date_items(self, time_stamp=time.time()) -> list:
         """
         :param time_stamp:
-        :return: list. and the item is an tuple witch order same Database table.
+        :return: list. and the item is an tuple (item_url,sales_amount,access_num).
         """
-        return self.__connection.query(self.__sql_before_date % ())
+        return self.__connection.query(self.__sql_before_date % time_stamp)
 
     def insert_commodities(self, commodity_list: list):
         if type(commodity_list) is not list or len(commodity_list) == 0 \

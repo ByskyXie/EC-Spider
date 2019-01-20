@@ -117,6 +117,7 @@ class Launcher:
         jd_begin_time = time.time()
         helper = DatabaseHelper()
         jlpr = JdListPageReader()
+        chrome_backtask = webdriver.Chrome()
         wdw = WebDriverWait(browser, self.__jd_max_wait_time, 0.7)
         #############
         try:
@@ -163,30 +164,32 @@ class Launcher:
                 wdw.until(CEC.ResultAllAppear(), "Wait all result failed.")
                 time.sleep(0.4)
                 # 读取价格信息并更新
-                commodity_list = jlpr.get_jd_commodities_from_list_page(browser, kw)
+                commodity_list = jlpr.read_commodities(browser, kw)
                 helper.insert_commodities(commodity_list)
-                item_list = jlpr.get_jd_items_from_list_page(browser)
+                item_list = jlpr.read_items(browser)
                 helper.insert_items(item_list)
                 # 翻页，页码+1
                 browser.find_element(By.XPATH, '/*').send_keys(Keys.RIGHT)
                 page_num += 1
             # 2.针对未更新但已有记录的商品，也更新
             # TODO:一个关键字已完毕，针对已记录且未在当日搜索结果的商品，另起一个线程处理该情况
-            self.refresh_database_info(kw)
+            self.refresh_database_info(chrome_backtask, kw)
             # # TODO:通知异常
             # link = LinkAdministrator()
             # link.send_message('JD get button failed:')
+        chrome_backtask.close()
 
     def get_time_spent_percent(self) -> float:
         return (time.time() - self.__round_begin_time)/self.__round_max_duration
 
-    def refresh_database_info(self, keyword: str):
+    def refresh_database_info(self, browser: webdriver.Chrome, keyword: str):
         begin_time = time.time()
+        jdpr = JdDetailPageReader()
         helper = DatabaseHelper()
         item_list = helper.query_refresh_before_date_items(self.__round_begin_time)
         for item in item_list:
             # TODO:访问详情页，效率会特别低。
-            pass
+            browser.get(item[1])
 
 
     def output_spider_state(self):
@@ -229,7 +232,7 @@ class JdDetailPageReader:
     def __init__(self) -> None:
         super().__init__()
 
-    def get_jd_commodity_from_detail_page(self, browser: selenium.webdriver.Chrome) -> (Commodity, None):
+    def read_commodity(self, browser: selenium.webdriver.Chrome) -> (Commodity, None):
         """
         method:
             Rely the supplied jd commodity detail page. the method format read in info and then return a
@@ -240,8 +243,8 @@ class JdDetailPageReader:
         :return:
         """
         # TODO:有可能无货/链接无效
-        if not self.is_current_page_is_jd_detail(browser):
-            logging.info("[JdDetailPageReader.get_jd_commodity_from_detail_page]"
+        if not self.is_jd_detail_page(browser):
+            logging.info("[JdDetailPageReader.read_commodity]"
                          " Current page is't detail page:", browser.title)
             return None  # 判断是否是详情页
         comm = Commodity()
@@ -249,24 +252,24 @@ class JdDetailPageReader:
         try:
             comm.item_url = browser.current_url
         except TimeoutException:
-            logging.warning('Get url failed! at method:JdDetailReader.get_jd_commodity_from_detail_page()')
+            logging.warning('Get url failed! at method:JdDetailReader.read_commodity()')
             return None
         # 获取商品title
         comm.item_title = browser.title
         # 获取商品name
-        comm.item_name = self.get_jd_item_name_from_detail_page(browser)
+        comm.item_name = self.get_item_name(browser)
         # 获取商品分类
-        comm.item_type = self.get_jd_item_type_from_detail_page(browser)
+        comm.item_type = self.get_item_type(browser)
         # keyword 从分类中截取
         comm.keyword = comm.item_type[0: comm.item_type.index('>')]
         # 获取店铺url
-        comm.store_url = self.get_jd_store_url_from_detail_page(browser)
+        comm.store_url = self.get_store_url(browser)
         # 获取店铺名
-        comm.store_name = self.get_jd_store_name_from_detail_page(browser)
+        comm.store_name = self.get_store_name(browser)
         # 默认访问次数为0
         return comm
 
-    def get_jd_item_from_detail_page(self, browser: selenium.webdriver.Chrome) -> (Item, None):
+    def read_item(self, browser: selenium.webdriver.Chrome) -> (Item, None):
         """
         method:
             Rely the supplied jd item detail page. the method format read in info and then return a
@@ -277,13 +280,13 @@ class JdDetailPageReader:
         :return:
         """
         # TODO:有可能无货/链接无效
-        if not self.is_current_page_is_jd_detail(browser):
-            logging.info("[JdDetailPageReader.get_jd_item_from_detail_page]"
+        if not self.is_jd_detail_page(browser):
+            logging.info("[JdDetailPageReader.read_item]"
                          " Current page is't detail page:", browser.title)
             return None  # 判断是否是详情页
         item = Item()
         # 获取颜色标题及所选项目值
-        color_dom = self.get_jd_color_dom_from_detail_page(browser)
+        color_dom = self.get_color_dom(browser)
         if color_dom is not None and len(color_dom) != 0:
             color_title_str = color_dom[0].text  # 获取标题
             color_selected_str = color_dom[1].find_element(By.CLASS_NAME, "selected").text  # 获取已选值
@@ -292,7 +295,7 @@ class JdDetailPageReader:
             # 某些单一款不需要选颜色
             pass
         # 获取版本标题及所选项目值
-        edition_dom = self.get_jd_edition_dom_from_detail_page(browser)
+        edition_dom = self.get_edition_dom(browser)
         if edition_dom is not None and len(edition_dom) != 0:
             edition_title_str = edition_dom[0].text
             edition_selected_str = edition_dom[1].find_element(By.CLASS_NAME, "selected").text
@@ -301,17 +304,17 @@ class JdDetailPageReader:
             # 说明不需要选择型号，或者说没有型号信息
             pass
         # 获取价格
-        item.price = self.get_jd_price_from_detail_page(browser)
+        item.price = self.get_price(browser)
         # 获取plus会员价格
-        item.plus_price = self.get_jd_plus_price_from_detail_page(browser)
+        item.plus_price = self.get_plus_price(browser)
         # 获取商品url,可能因加载中等失败
         try:
             item.url = browser.current_url
         except TimeoutException:
-            logging.warning('Get url failed! at method:JdDetailReader.get_jd_item_from_detail_page()')
+            logging.warning('Get url failed! at method:JdDetailReader.read_item()')
             return None
         # 领券
-        ticket_dom = self.get_jd_ticket_dom_from_detail_page(browser)
+        ticket_dom = self.get_ticket_dom(browser)
         if ticket_dom is not None and len(ticket_dom) != 0:
             ticket_str = ''
             for ti in ticket_dom:
@@ -320,44 +323,44 @@ class JdDetailPageReader:
         # 库存:京东不显示库存量，只有有无货之分
         # 快递费:京东各省价格均不同，有货情况也不同故不做记录
         # 销量
-        item.sales_amount = self.get_jd_remark_from_detail_page(browser)
+        item.sales_amount = self.get_remark(browser)
         # 可选字段
         # 生成所有字段
         item.generate_all_specification()
         return item
 
-    def is_current_page_is_jd_detail(self, browser: selenium.webdriver.Chrome):
+    def is_jd_detail_page(self, browser: selenium.webdriver.Chrome):
         try:
             browser.find_element(By.XPATH, self.__jd_detail_page_detect)
         except selenium.common.exceptions.NoSuchElementException:
             return False
         return True
 
-    def get_jd_store_name_from_detail_page(self, browser: selenium.webdriver.Chrome) -> str:
+    def get_store_name(self, browser: selenium.webdriver.Chrome) -> str:
         return browser.find_element(By.XPATH, self.__jd_detail_page_store_name_xpath).text.strip()
 
-    def get_jd_store_url_from_detail_page(self, browser: selenium.webdriver.Chrome) -> str:
+    def get_store_url(self, browser: selenium.webdriver.Chrome) -> str:
         return browser.find_element(By.XPATH, self.__jd_detail_page_store_name_xpath).get_attribute('href')
 
-    def get_jd_item_name_from_detail_page(self, browser: selenium.webdriver.Chrome) -> str:
+    def get_item_name(self, browser: selenium.webdriver.Chrome) -> str:
         return browser.find_element(By.XPATH, self.__jd_detail_page_item_name_xpath).text.strip()
 
-    def get_jd_item_type_from_detail_page(self, browser: selenium.webdriver.Chrome) -> str:
+    def get_item_type(self, browser: selenium.webdriver.Chrome) -> str:
         return browser.find_element(By.XPATH, self.__jd_detail_page_item_type_xpath).text.strip()
 
-    def get_jd_specification_dom_from_detail_page(self, browser: selenium.webdriver.Chrome):
+    def get_specification_dom(self, browser: selenium.webdriver.Chrome):
         return browser.find_elements(By.XPATH, self.__jd_detail_page_specification_xpath)
 
-    def get_jd_color_dom_from_detail_page(self, browser: selenium.webdriver.Chrome):
+    def get_color_dom(self, browser: selenium.webdriver.Chrome):
         return browser.find_elements(By.XPATH, self.__jd_detail_page_color_xpath)
 
-    def get_jd_edition_dom_from_detail_page(self, browser: selenium.webdriver.Chrome):
+    def get_edition_dom(self, browser: selenium.webdriver.Chrome):
         return browser.find_elements(By.XPATH, self.__jd_detail_page_edition_xpath)
 
-    def get_jd_ticket_dom_from_detail_page(self, browser: selenium.webdriver.Chrome):
+    def get_ticket_dom(self, browser: selenium.webdriver.Chrome):
         return browser.find_elements(By.XPATH, self.__jd_detail_page_ticket_xpath)
 
-    def get_jd_remark_from_detail_page(self, browser: selenium.webdriver.Chrome) -> int:
+    def get_remark(self, browser: selenium.webdriver.Chrome) -> int:
         remark = browser.find_element(By.XPATH, self.__jd_detail_page_remark_xpath).text[1: -1]
         if len(remark) > 1:
             remark = remark[:-1]  # 说明销量不为个位数
@@ -374,13 +377,13 @@ class JdDetailPageReader:
                 amount = float(remark[:-1]) * 100000000
         return int(amount)
 
-    def get_jd_price_from_detail_page(self, browser: selenium.webdriver.Chrome) -> float:
+    def get_price(self, browser: selenium.webdriver.Chrome) -> float:
         try:
             return float(browser.find_element(By.XPATH, self.__jd_detail_page_price_xpath).text)
         except ValueError:
             return -1
 
-    def get_jd_plus_price_from_detail_page(self, browser: selenium.webdriver.Chrome) -> float:
+    def get_plus_price(self, browser: selenium.webdriver.Chrome) -> float:
         try:
             return float(browser.find_element(By.XPATH, self.__jd_detail_page_plus_price_xpath).text[1:])
         except ValueError:
@@ -432,7 +435,7 @@ class JdListPageReader:
     def jd_list_page_goods_list_xpath(self):
         return self.__jd_list_page_goods_list_xpath
 
-    def get_jd_commodities_from_list_page(self, browser: selenium.webdriver.Chrome, keyword: str) -> list:
+    def read_commodities(self, browser: selenium.webdriver.Chrome, keyword: str) -> list:
         """
         method:
             Rely the supplied jd commodity detail page. the method format read in info and then return a
@@ -444,23 +447,23 @@ class JdListPageReader:
             a commodity instance.
         """
         goods_list = []
-        if not self.is_current_page_is_jd_list(browser):
+        if not self.is_jd_list_page(browser):
             return goods_list  # 判断是否是详情页
-        goods_dom_list = self.get_jd_list_page_goods_list(browser)
+        goods_dom_list = self.get_goods_list(browser)
         for goods_dom in goods_dom_list:
             # 读取单个commodity，查看是否符合销量限制
-            remark = self.get_jd_sales_amount_from_list_page(goods_dom)
+            remark = self.get_sales_amount(goods_dom)
             if remark < self.jd_sales_amount_limit:
                 continue
             # 读取
-            comm = self.get_jd_list_page_single_goods_commodity(goods_dom)
+            comm = self.read_single_goods_commodity(goods_dom)
             if comm is not None:
                 # 补全keyword，通过哪个关键字搜到的
                 comm.keyword = keyword
                 goods_list.append(comm)
         return goods_list
 
-    def get_jd_items_from_list_page(self, browser: selenium.webdriver.Chrome) -> list:
+    def read_items(self, browser: selenium.webdriver.Chrome) -> list:
         """
         method:
             Rely the supplied jd item detail page. the method format read in info and then return a
@@ -471,35 +474,35 @@ class JdListPageReader:
         :return:
         """
         item_list = []
-        if not self.is_current_page_is_jd_list(browser):
+        if not self.is_jd_list_page(browser):
             return item_list  # 判断是否是详情页
-        goods_dom_list = self.get_jd_list_page_goods_list(browser)
+        goods_dom_list = self.get_goods_list(browser)
         for goods_dom in goods_dom_list:
             # 读取单个commodity，查看是否符合销量限制
-            remark = self.get_jd_sales_amount_from_list_page(goods_dom)
+            remark = self.get_sales_amount(goods_dom)
             if remark < self.jd_sales_amount_limit:
                 continue
             # 读取单个item
-            item = self.get_jd_list_page_single_goods_items(goods_dom)
+            item = self.read_single_goods_item(goods_dom)
             if item is not None:
                 item_list.append(item)
         return item_list
 
-    def is_current_page_is_jd_list(self, browser: selenium.webdriver.Chrome) -> bool:
+    def is_jd_list_page(self, browser: selenium.webdriver.Chrome) -> bool:
         try:
             browser.find_element(By.XPATH, self.__jd_list_page_detect)
         except selenium.common.exceptions.NoSuchElementException:
             return False
         return True
 
-    def get_jd_list_page_goods_list(self, browser: selenium.webdriver.Chrome) -> list:
+    def get_goods_list(self, browser: selenium.webdriver.Chrome) -> list:
         return browser.find_elements(By.XPATH, self.__jd_list_page_goods_list_xpath)
 
-    def get_jd_list_page_single_goods_commodity(self, element: WebElement) \
+    def read_single_goods_commodity(self, element: WebElement) \
             -> (Commodity, None):
         """
         :param
-            element:A item of the list witch gain by method: get_jd_list_page_goods_list().
+            element:A item of the list witch gain by method: get_goods_list().
         :return:
             An instance of Commodity which haven't set the value of keyword
             or None, if an error occurred.
@@ -507,29 +510,29 @@ class JdListPageReader:
         try:
             # 获取商品url,可能失败
             comm = Commodity()
-            comm.item_url = self.get_jd_item_url_from_list_page(element)
+            comm.item_url = self.get_item_url(element)
             # XXX: Keyword未指定
 
             # 获取商品title
-            comm.item_title = self.get_jd_item_name_from_list_page(element)
+            comm.item_title = self.get_item_name(element)
             # 获取商品name
             comm.item_name = comm.item_title
             # 获取商品分类（列表下是不存在的）
             # 获取店铺url
-            comm.store_url = self.get_jd_store_url_from_list_page(element)
+            comm.store_url = self.get_store_url(element)
             # 获取店铺名
-            comm.store_name = self.get_jd_store_name_from_list_page(element)
+            comm.store_name = self.get_store_name(element)
             # 默认访问次数为0
         except selenium.common.exceptions.NoSuchElementException:
             logging.warning('Get single goods, No such element:' + (traceback.print_exc() or 'None'))
             return None
         return comm
 
-    def get_jd_list_page_single_goods_items(self, element: WebElement) \
+    def read_single_goods_item(self, element: WebElement) \
             -> (Item, None):
         """
         :param element:
-            A item of the list witch gain by method: get_jd_list_page_goods_list().
+            A item of the list witch gain by method: get_goods_list().
         :return:
             An instance of Item or None, if an error occurred.
         """
@@ -539,33 +542,33 @@ class JdListPageReader:
         # 获取颜色标题及所选项目值（详情列表不存在的）
         # 获取版本标题及所选项目值（详情列表不存在的）
         # 获取价格
-        item.price = self.get_jd_price_from_list_page(element)
+        item.price = self.get_price(element)
         # 获取plus会员价格（详情列表不存在的）
         # 获取商品url
-        item.url = self.get_jd_item_url_from_list_page(element)
+        item.url = self.get_item_url(element)
         # 领券（详情列表不存在的）
         # 库存:京东不显示库存量，只有有无货之分（详情列表不存在的）
         # 快递费:京东各省价格均不同，有货情况也不同故不做记录（详情列表不存在的）
         # 销量
-        item.sales_amount = self.get_jd_sales_amount_from_list_page(element)
+        item.sales_amount = self.get_sales_amount(element)
         # 可选字段（详情列表不存在的）
         # 生成所有字段（详情列表不存在的）
         item.generate_all_specification()
         return item
 
-    def get_jd_store_name_from_list_page(self, element: WebElement) -> str:
+    def get_store_name(self, element: WebElement) -> str:
         return element.find_element(By.XPATH, self.__jd_list_page_store_name_xpath).text.strip()
 
-    def get_jd_store_url_from_list_page(self, element: WebElement) -> str:
+    def get_store_url(self, element: WebElement) -> str:
         return element.find_element(By.XPATH, self.__jd_list_page_store_name_xpath).get_attribute('href')
 
-    def get_jd_item_name_from_list_page(self, element: WebElement) -> str:
+    def get_item_name(self, element: WebElement) -> str:
         return element.find_element(By.XPATH, self.__jd_list_page_item_name_xpath).text.strip()
 
-    def get_jd_item_url_from_list_page(self, element: WebElement) -> str:
+    def get_item_url(self, element: WebElement) -> str:
         return element.find_element(By.XPATH, self.__jd_list_page_item_url_xpath).get_attribute('href')
 
-    def get_jd_sales_amount_from_list_page(self, element: WebElement) -> int:
+    def get_sales_amount(self, element: WebElement) -> int:
         remark = element.find_element(By.XPATH, self.__jd_list_page_sales_amount_xpath).text
         if len(remark) > 1:
             remark = remark[:-1]  # 说明销量不为个位数
@@ -582,7 +585,7 @@ class JdListPageReader:
                 amount = float(remark[:-1]) * 100000000
         return int(amount)
 
-    def get_jd_price_from_list_page(self, element: WebElement) -> float:
+    def get_price(self, element: WebElement) -> float:
         try:
             return float(element.find_element(By.XPATH, self.__jd_list_page_price_xpath).text)
         except ValueError:

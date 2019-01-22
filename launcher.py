@@ -46,6 +46,10 @@ class Launcher:
             ec_list:
         :return:
         """
+        self.refresh_database_info('手机')
+        i = 1
+        if i == 1:
+            return
         while True:
             self.__round_begin_time = time.time()  # 计时开始
             with webdriver.Chrome(chrome_options=self.chrome_option_initial()) as chrome:
@@ -199,7 +203,7 @@ class Launcher:
             wdw = WebDriverWait(chrome, self.__jd_max_wait_time)
             for item in item_list:
                 # TODO:设立时间标志，超时自行退出(访问详情页，效率会特别低)
-                chrome.get(item[1])
+                chrome.get(item[0])
                 wdw.until(EC.presence_of_element_located((By.XPATH, jdpr.jd_detail_page_detect))
                           , "[Thread detail page]: wait timeout.")
                 item = jdpr.read_item(chrome)
@@ -622,7 +626,7 @@ class DatabaseHelper:
         "INSERT INTO ITEM(item_url_md5,item_url,data_begin_time,data_end_time," \
         "item_price,plus_price, ticket, inventory, sales_amount, transport_fare," \
         "all_specification, spec1, spec2, spec3, spec4, spec5, spec_other) " \
-        "VALUES ('%s','%s',%f,%f,%f,%f,'%s',%d,'%d',%f" \
+        "VALUES ('%s','%s',%f,%f,%f,%f,'%s',%d,%d,%f" \
         ",'%s','%s','%s','%s','%s','%s','%s');"
     # __sql_insert_items = \
     #     "INSERT IGNORE INTO ITEM(item_url_md5,item_url,data_begin_time,data_end_time," \
@@ -658,8 +662,20 @@ class DatabaseHelper:
         "  SELECT item_url_md5 " \
         "  FROM item " \
         "  WHERE data_end_time > %f) " \
-        "AND item.item_url_md5 = t1.item_url_md5 AND t1.keyword=%s " \
+        "AND item.item_url_md5 = t1.item_url_md5 AND t1.keyword='%s' " \
         "ORDER BY access_num DESC, sales_amount DESC;"  # 所给日期后均未更新且关键字为%s的商品
+    __sql_delete_commodity = \
+        "DELETE FROM commodity " \
+        "WHERE item_url_md5='%s';"
+    __sql_delete_commodities = \
+        "DELETE FROM commodity " \
+        "WHERE item_url_md5=%s;"
+    __sql_delete_item = \
+        "DELETE FROM item " \
+        "WHERE item_url_md5='%s';"
+    __sql_delete_items = \
+        "DELETE FROM item " \
+        "WHERE item_url_md5=%s;"
     __connection = None
 
     def __init__(self):
@@ -804,8 +820,24 @@ class DatabaseHelper:
             ))
             self.__connection.commit()
 
+    def delete_commodity(self, url_md5: str):
+        if type(url_md5) is not str:
+            return
+        with self.__connection.cursor() as cursor:
+            cursor.execute(self.__sql_delete_commodity % url_md5)
+            cursor.execute(self.__sql_delete_item % url_md5)
+            self.__connection.commit()
+
+    def delete_commodities(self, url_md5_list: list):
+        if len(url_md5_list) < 1 or type(url_md5_list[0]) is not str:
+            return
+        with self.__connection.cursor() as cursor:
+            cursor.executemany(self.__sql_delete_commodities, url_md5_list)
+            cursor.executemany(self.__sql_delete_items, url_md5_list)
+            self.__connection.commit()
+
     def is_commodity_exist(self, commodity_md5: str) -> bool:
-        if self.__connection.query(self.__sql_query_commodity % (commodity_md5,)) > 0:
+        if self.__connection.query(self.__sql_query_commodity % commodity_md5) > 0:
             return True
         return False
 
@@ -818,7 +850,7 @@ class DatabaseHelper:
         :return:
         """
         with self.__connection.cursor() as cursor:
-            cursor.execute(self.__sql_query_item % (item.item_url_md5,))
+            cursor.execute(self.__sql_query_item % item.item_url_md5)
             row = cursor.fetchone()
             if row is None:
                 logging.info('Query record error at DatabaseHelper.is_item_price_changes()'

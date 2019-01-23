@@ -16,6 +16,7 @@ from email.header import Header
 from email.mime.text import MIMEText
 import custom_expected_conditions as CEC
 from selenium import webdriver
+from typing import Optional, Callable, Any, Iterable, Mapping
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
@@ -185,29 +186,15 @@ class Launcher:
                 page_num += 1
             # 2.针对未更新但已有记录的商品，也更新
             # 一个关键字已完毕，针对已记录且未在当日搜索结果的商品，另起线程处理该情况
-            t = threading.Thread(target=self.refresh_database_info, args=(kw,))
-            t.start()
+            dt = DetailThread(self.__round_begin_time, kw)
+            dt.start()
+            self.__thread_pool.append(dt)
             # TODO:通知异常
             # link = LinkAdministrator()
             # link.send_message('JD get button failed:')
 
     def get_time_spent_percent(self) -> float:
         return (time.time() - self.__round_begin_time)/self.__round_max_duration
-
-    def refresh_database_info(self, keyword: str):
-        begin_time = time.time()
-        jdpr = JdDetailPageReader()
-        helper = DatabaseHelper()
-        item_list = helper.query_refresh_before_date_items(self.__round_begin_time, keyword)
-        with webdriver.Chrome(chrome_options=self.chrome_option_initial()) as chrome:
-            wdw = WebDriverWait(chrome, self.__jd_max_wait_time)
-            for item in item_list:
-                # TODO:设立时间标志，超时自行退出(访问详情页，效率会特别低)
-                chrome.get(item[0])
-                wdw.until(EC.presence_of_element_located((By.XPATH, jdpr.jd_detail_page_detect))
-                          , "[Thread detail page]: wait timeout.")
-                item = jdpr.read_item(chrome)
-                helper.insert_item(item)
 
     def output_spider_state(self):
         with open('spiderState.txt', 'w') as output_file:
@@ -878,6 +865,35 @@ class LinkAdministrator:
         smtp.login(user, pwd)
         smtp.sendmail(user, self.__reciver, message.as_string())
         smtp.quit()
+
+
+class DetailThread(threading.Thread):
+    __keyword = None
+    __round_begin_time = time.time()
+    __max_wait_time = 5  # 网页加载最大等待时间
+
+    def __init__(self, round_begin_time: time, keyword: str, group: None = ...,
+                 target: Optional[Callable[..., Any]] = ..., name: Optional[str] = ...,
+                 args: Iterable = ..., kwargs: Mapping[str, Any] = ..., *, daemon: Optional[bool] = ...) -> None:
+        super().__init__(group, target, name, args, kwargs, daemon=daemon)
+        self.__keyword = keyword
+        self.__round_begin_time = round_begin_time
+
+    def run(self) -> None:
+        begin_time = time.time()
+        jdpr = JdDetailPageReader()
+        helper = DatabaseHelper()
+        item_list = helper.query_refresh_before_date_items(self.__round_begin_time, self.__keyword)
+        with webdriver.Chrome(chrome_options=Launcher.chrome_option_initial()) as chrome:
+            wdw = WebDriverWait(chrome, self.__max_wait_time)
+            for item in item_list:
+                # TODO:设立时间标志，超时自行退出(访问详情页，效率会特别低)
+                chrome.get(item[0])
+                wdw.until(EC.presence_of_element_located((By.XPATH, jdpr.jd_detail_page_detect))
+                          , "[Thread detail page]: wait timeout.")
+                item = jdpr.read_item(chrome)
+                helper.insert_item(item)
+
 
 if __name__ == '__main__':
     laun = Launcher()

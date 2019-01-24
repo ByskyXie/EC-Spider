@@ -26,8 +26,8 @@ from selenium.webdriver.remote.webelement import WebElement
 
 
 class Launcher:
-    __jd_max_turn_page_amount = 20  # 对于某个关键字最大翻页次数
-    __jd_max_wait_time = 5  # 网页加载最大等待时间
+    __jd_max_turn_page_amount = 2  # 对于某个关键字最大翻页次数
+    __jd_max_wait_time = 10  # 网页加载最大等待时间
     __jd_no_result_str = "没有找到"  # 无结果页面关键字
     __round_begin_time = time.time()  # 一轮爬虫开始时间
     __round_max_duration = 24*60*60  # 一轮最大可接受时间
@@ -47,10 +47,6 @@ class Launcher:
             ec_list:
         :return:
         """
-        self.refresh_database_info('手机')
-        i = 1
-        if i == 1:
-            return
         while True:
             self.__round_begin_time = time.time()  # 计时开始
             with webdriver.Chrome(chrome_options=self.chrome_option_initial()) as chrome:
@@ -78,7 +74,6 @@ class Launcher:
                 time.sleep(blank_time)
             else:
                 logging.warning('Full spent timeout:' + str(- blank_time) + 'Second.')
-
 
     @staticmethod
     def anti_detected_initial(browser: selenium.webdriver.Chrome):
@@ -153,7 +148,12 @@ class Launcher:
                     delete navigator.webdrivser;
                     Object.defineProperty(navigator, 'webdriver', {get: () => false,});//改为Headless=false
                 }""")  # TODO:检测无头模式，为真则做出修改
-            button.click()
+            try:
+                button.click()
+            except selenium.common.exceptions.WebDriverException:
+                browser.refresh()
+                logging.error("Launcher.access_jd() :Button can't click.")
+                continue
             while page_num <= self.__jd_max_turn_page_amount:
                 if self.__jd_max_duration * position / len(kw_list) < (time.time() - jd_begin_time):
                     # 控制进度。说明该kw超时了，以后的页面不再读取
@@ -643,7 +643,7 @@ class DatabaseHelper:
         "AND item.item_url_md5 = t1.item_url_md5 " \
         "ORDER BY access_num DESC, sales_amount DESC;"  # 所给日期后均未更新的商品
     __sql_keyword_before_date = \
-        "SELECT DISTINCT t1.item_url,sales_amount,access_num " \
+        "SELECT DISTINCT t1.item_url,t1.item_url_md5 " \
         "FROM item,(SELECT item_url_md5,item_url,access_num,keyword FROM commodity) as t1 " \
         "WHERE item.item_url_md5 NOT IN (" \
         "  SELECT item_url_md5 " \
@@ -708,7 +708,7 @@ class DatabaseHelper:
         """
         :param time_stamp:
         :param keyword:
-        :return: list. and the item is an tuple (item_url,sales_amount,access_num).
+        :return: list. and the item is item_url_md5.
         """
         with self.__connection.cursor() as cursor:
             if keyword is None:
@@ -725,7 +725,7 @@ class DatabaseHelper:
             try:
                 cursor.executemany(self.__sql_insert_commodities
                                    , self.__general_nesting_commodity_list(commodity_list))
-                assert cursor.rowcount == len(commodity_list), 'Not all commodities insert success.'
+                # assert cursor.rowcount == len(commodity_list), 'Not all commodities insert success.'
                 self.__connection.commit()
             except Exception:
                 logging.info('Insert commodities occurred error.', traceback.print_exc())
@@ -869,15 +869,18 @@ class LinkAdministrator:
 
 class DetailThread(threading.Thread):
     __keyword = None
-    __round_begin_time = time.time()
+    __round_begin_time = None
+    __round_max_end_time = None  # 最久可接受的结束时间，可能因为处理完/中断而提前结束线程
+    __max_duration = 20*60  # 该窗口最多开20分钟
     __max_wait_time = 5  # 网页加载最大等待时间
+    __runnable_flag = True  # 决定是否继续运行
 
-    def __init__(self, round_begin_time: time, keyword: str, group: None = ...,
-                 target: Optional[Callable[..., Any]] = ..., name: Optional[str] = ...,
-                 args: Iterable = ..., kwargs: Mapping[str, Any] = ..., *, daemon: Optional[bool] = ...) -> None:
+    def __init__(self, round_begin_time: time, keyword: str, group=None,
+                 target=None, name=None, args=(), kwargs=None, *, daemon=None) -> None:
         super().__init__(group, target, name, args, kwargs, daemon=daemon)
         self.__keyword = keyword
         self.__round_begin_time = round_begin_time
+        self.__round_max_end_time = round_begin_time + self.__max_duration
 
     def run(self) -> None:
         begin_time = time.time()
@@ -886,13 +889,26 @@ class DetailThread(threading.Thread):
         item_list = helper.query_refresh_before_date_items(self.__round_begin_time, self.__keyword)
         with webdriver.Chrome(chrome_options=Launcher.chrome_option_initial()) as chrome:
             wdw = WebDriverWait(chrome, self.__max_wait_time)
-            for item in item_list:
-                # TODO:设立时间标志，超时自行退出(访问详情页，效率会特别低)
-                chrome.get(item[0])
+            counter = 0
+            for it in item_list:
+                # 设立时间标志，超时自行退出(访问详情页，效率会特别低)
+                if not self.__runnable_flag or self.__round_max_end_time < time.time():
+                    break
+                chrome.get(it[0])
                 wdw.until(EC.presence_of_element_located((By.XPATH, jdpr.jd_detail_page_detect))
                           , "[Thread detail page]: wait timeout.")
                 item = jdpr.read_item(chrome)
                 helper.insert_item(item)
+                counter += 1
+        # 删除counter及以后的商品记录
+        item_list = item_list[counter:]
+        md5_list = []
+        for it in item_list:
+            md5_list.append(it[1])
+        helper.delete_commodities(md5_list)
+
+    def stop(self):
+        self.__runnable_flag = False
 
 
 if __name__ == '__main__':

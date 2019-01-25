@@ -92,6 +92,8 @@ class Commodity:
 
 
 class Item:
+    CURRENT_CODE = -1  # 代表持续到当前现实的时间
+
     __item_url_md5 = None
     __item_url = None
     __item_price = -1.0
@@ -99,7 +101,7 @@ class Item:
     __ticket = ''
     inventory = -1
     __data_begin_time = time.time()
-    __data_end_time = time.time()
+    __data_end_time = CURRENT_CODE
     __sales_amount = 0
     __transport_fare = -1
     __all_specification = ''

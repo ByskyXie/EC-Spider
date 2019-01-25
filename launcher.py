@@ -629,10 +629,10 @@ class DatabaseHelper:
         "WHERE item_url_md5='%s' " \
         "ORDER BY data_begin_time DESC " \
         "LIMIT 1;"  # 选取最顶上一条记录即可
-    __sql_update_item = \
+    __sql_update_item_end_time = \
         "UPDATE item " \
         "SET data_end_time=%f " \
-        "WHERE item_url_md5='%s' and data_begin_time=%f and item_price=%f ;"
+        "WHERE item_url_md5='%s' and data_end_time=%f;"
     __sql_before_date = \
         "SELECT DISTINCT t1.item_url,sales_amount,access_num " \
         "FROM item,(SELECT item_url_md5,item_url,access_num FROM commodity) as t1 " \
@@ -791,15 +791,10 @@ class DatabaseHelper:
         if type(item) != Item:
             return
         with self.__connection.cursor() as cursor:
-            if self.is_item_price_changes(item):
-                # TODO:存在,的话看看能否补全信息
-                # TODO:这里item的起始时间已经不是当前时间了，通过is_item_price_changes()方法
-                #  XXX:已经改为了最新记录的起始时间，这样下面那句查询才能成功定位到该条记录，进而更新
-                cursor.execute(self.__sql_update_item % (
-                    item.data_end_time, item.item_url_md5, item.data_begin_time, item.price))
-                self.__connection.commit()
+            if not self.is_item_price_changed(item, True):
+                # 说明已经有记录，且价格未改变
                 return
-            # 批量导入，list内元素必须为tuple:(value1,value2,value3...)
+            # 导入新记录，list内元素必须为tuple:(value1,value2,value3...)
             cursor.execute(self.__sql_insert_item % (
                 item.item_url_md5, item.url, item.data_begin_time, item.data_end_time, item.price, item.plus_price,
                 item.ticket, item.inventory, item.sales_amount, item.transport_fare, item.all_specification,
@@ -828,7 +823,7 @@ class DatabaseHelper:
             return True
         return False
 
-    def is_item_price_changes(self, item: Item) -> bool:
+    def is_item_price_changed(self, item: Item, if_changed_update_end_time: bool = False) -> bool:
         """
         method:
             Judge current price whether changed. In the other words, is the least record price equals item.price
@@ -840,16 +835,17 @@ class DatabaseHelper:
             cursor.execute(self.__sql_query_item % item.item_url_md5)
             row = cursor.fetchone()
             if row is None:
-                logging.info('Query record error at DatabaseHelper.is_item_price_changes()'
-                                '\nget row is None\n' + item.__str__())
+                logging.info('Query record error at DatabaseHelper.is_item_price_changed()'
+                             '\nget row is None\n' + item.__str__())
                 # 说明之前未记录该商品信息
-                return False
-            if item.price == row[4]:
-                # TODO:
-                #  XXX:这里将之前记录的起始时间传递出去，下一步更新时才方便查找该条记录
-                item.data_begin_time = row[2]
                 return True
-        return False
+            if item.price == row[4]:
+                return False
+            if if_changed_update_end_time:
+                cursor.execute(self.__sql_update_item_end_time % (
+                    item.data_begin_time, item.item_url_md5, Item.CURRENT_CODE))
+                self.__connection.commit()
+        return True
 
 
 class LinkAdministrator:

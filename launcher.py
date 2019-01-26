@@ -26,8 +26,8 @@ from selenium.webdriver.remote.webelement import WebElement
 
 
 class Launcher:
-    __jd_max_turn_page_amount = 2  # 对于某个关键字最大翻页次数
-    __jd_max_wait_time = 10  # 网页加载最大等待时间
+    __jd_max_turn_page_amount = 20  # 对于某个关键字最大翻页次数
+    __jd_max_wait_time = 20  # 网页加载最大等待时间
     __jd_no_result_str = "没有找到"  # 无结果页面关键字
     __round_begin_time = time.time()  # 一轮爬虫开始时间
     __round_max_duration = 24*60*60  # 一轮最大可接受时间
@@ -50,6 +50,7 @@ class Launcher:
         while True:
             self.__round_begin_time = time.time()  # 计时开始
             with webdriver.Chrome(chrome_options=self.chrome_option_initial()) as chrome:
+                chrome.maximize_window()
                 self.__thread_pool = []  # 清空线程池
                 chrome.implicitly_wait(5)  # 等待5秒
                 self.anti_detected_initial(chrome)
@@ -159,10 +160,26 @@ class Launcher:
                     # 控制进度。说明该kw超时了，以后的页面不再读取
                     logging.info('[Single keyword running timeout]:' + kw + ' page:' + page_num)
                     break
-                wdw.until(CEC.PageViewsAppear(
-                    [(By.XPATH, jlpr.jd_list_page_goods_list_xpath),
-                     (By.XPATH, jlpr.jd_list_page_turn_xpath)]
-                ), "Search result not appear")
+                try:
+                    wdw.until(CEC.PageViewsAppear(
+                        [(By.XPATH, jlpr.jd_list_page_goods_list_xpath),
+                         (By.XPATH, jlpr.jd_list_page_turn_xpath)]
+                    ), "Search result not appear")
+                except TimeoutException:
+                    browser.refresh()  # 刷新重试一遍
+                    try:
+                        wdw.until(CEC.PageViewsAppear(
+                            [(By.XPATH, jlpr.jd_list_page_goods_list_xpath),
+                             (By.XPATH, jlpr.jd_list_page_turn_xpath)]
+                        ), "Search result not appear")
+                    except TimeoutException:
+                        logging.error("[Launcher.access_jd()]:JD Result page haven't appear although refresh!"
+                                      + (traceback.print_exc() or "None"))
+                        # 依然失败，需要介入
+                        link = LinkAdministrator()
+                        link.send_message("[EC-Spider shut down]", "[Launcher.access_jd()]:JD Result page haven't "
+                                          "appear although refresh!" + (traceback.print_exc() or "None"))
+                        break
                 try:
                     temp = browser.find_element(By.XPATH, '//div[@class=\'notice-search\']')
                     if temp is not None and self.__jd_no_result_str in temp.text:
@@ -170,6 +187,7 @@ class Launcher:
                         logging.warning("JD没有找到与[" + kw + "]相关的商品", browser.current_url)
                         break
                 except selenium.common.exceptions.NoSuchElementException:
+                    # 找不到元素正常，说明该关键字有结果
                     pass
                 # 跳转到页面最底部
                 browser.execute_script("window.scrollTo(0, document.body.scrollHeight);")
@@ -463,12 +481,17 @@ class JdListPageReader:
             remark = self.get_sales_amount(goods_dom)
             if remark < self.jd_sales_amount_limit:
                 continue
-            # 读取
-            comm = self.read_single_goods_commodity(goods_dom)
-            if comm is not None:
-                # 补全keyword，通过哪个关键字搜到的
-                comm.keyword = keyword
-                goods_list.append(comm)
+            try:
+                # 读取
+                comm = self.read_single_goods_commodity(goods_dom)
+                if comm is not None:
+                    # 补全keyword，通过哪个关键字搜到的
+                    comm.keyword = keyword
+                    goods_list.append(comm)
+            except selenium.common.exceptions.StaleElementReferenceException:
+                logging.warning("JdListPageReader.read_commodities():"
+                                "Cause JavaScript changed page, can't read element.")
+                continue
         return goods_list
 
     def read_items(self, browser: selenium.webdriver.Chrome) -> list:
@@ -490,10 +513,15 @@ class JdListPageReader:
             remark = self.get_sales_amount(goods_dom)
             if remark < self.jd_sales_amount_limit:
                 continue
-            # 读取单个item
-            item = self.read_single_goods_item(goods_dom)
-            if item is not None:
-                item_list.append(item)
+            try:
+                # 读取单个item
+                item = self.read_single_goods_item(goods_dom)
+                if item is not None:
+                    item_list.append(item)
+            except selenium.common.exceptions.StaleElementReferenceException:
+                logging.warning("JdListPageReader.read_items():"
+                                "Cause JavaScript changed page, can't read element.")
+                continue
         return item_list
 
     def is_jd_list_page(self, browser: selenium.webdriver.Chrome) -> bool:
@@ -546,7 +574,7 @@ class JdListPageReader:
         """
         item = Item()
         # 起止时间
-        item.data_begin_time = item.data_end_time = time.time()
+        item.data_begin_time = time.time()
         # 获取颜色标题及所选项目值（详情列表不存在的）
         # 获取版本标题及所选项目值（详情列表不存在的）
         # 获取价格
@@ -853,7 +881,15 @@ class LinkAdministrator:
     __port = 465
     __reciver = 'byskyxie@qq.com'
 
-    def send_message(self, title: str, msg: str, user: str, pwd: str):
+    def send_message(self, title: str, msg: str, user: str = None, pwd: str = None):
+        if user is None:
+            try:
+                f = open("smtp.txt")
+                user = f.readline()
+                pwd = f.readline()
+            except FileNotFoundError:
+                print("No account info in smtp.txt, Or you can supply param 'user' and 'pwd'")
+                return
         message = MIMEText(msg, 'txt', 'utf-8')
         message['Subject'] = Header(title, 'utf-8')
         smtp = smtplib.SMTP()
@@ -868,7 +904,7 @@ class DetailThread(threading.Thread):
     __round_begin_time = None
     __round_max_end_time = None  # 最久可接受的结束时间，可能因为处理完/中断而提前结束线程
     __max_duration = 20*60  # 该窗口最多开20分钟
-    __max_wait_time = 5  # 网页加载最大等待时间
+    __max_wait_time = 20  # 网页加载最大等待时间
     __runnable_flag = True  # 决定是否继续运行
 
     def __init__(self, round_begin_time: time, keyword: str, group=None,
@@ -879,11 +915,11 @@ class DetailThread(threading.Thread):
         self.__round_max_end_time = round_begin_time + self.__max_duration
 
     def run(self) -> None:
-        begin_time = time.time()
         jdpr = JdDetailPageReader()
         helper = DatabaseHelper()
         item_list = helper.query_refresh_before_date_items(self.__round_begin_time, self.__keyword)
         with webdriver.Chrome(chrome_options=Launcher.chrome_option_initial()) as chrome:
+            chrome.maximize_window()
             wdw = WebDriverWait(chrome, self.__max_wait_time)
             counter = 0
             for it in item_list:
@@ -891,10 +927,13 @@ class DetailThread(threading.Thread):
                 if not self.__runnable_flag or self.__round_max_end_time < time.time():
                     break
                 chrome.get(it[0])
-                wdw.until(EC.presence_of_element_located((By.XPATH, jdpr.jd_detail_page_detect))
-                          , "[Thread detail page]: wait timeout.")
-                item = jdpr.read_item(chrome)
-                helper.insert_item(item)
+                try:
+                    wdw.until(EC.presence_of_element_located((By.XPATH, jdpr.jd_detail_page_detect))
+                              , "[DetailThread.run()]: wait timeout.")
+                    item = jdpr.read_item(chrome)
+                    helper.insert_item(item)
+                except TimeoutException:
+                    logging.info(it[0] + " Cause TimeoutException, haven't record.")
                 counter += 1
         # 删除counter及以后的商品记录
         item_list = item_list[counter:]

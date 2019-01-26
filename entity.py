@@ -188,12 +188,6 @@ class Item:
     def data_end_time(self) -> time:
         return self.__data_end_time
 
-    @data_end_time.setter
-    def data_end_time(self, value: time):
-        if type(value) != float:
-            return
-        self.__data_end_time = value
-
     @property
     def sales_amount(self) -> int:
         return self.__sales_amount
@@ -243,7 +237,10 @@ class Item:
         return time.strftime("%Y-%m-%d %H:%M:%S", time_array)
 
     def get_str_end_time(self):
-        time_array = time.localtime(self.__data_end_time)
+        try:
+            time_array = time.localtime(self.__data_end_time)
+        except OSError:
+            return '至今'
         return time.strftime("%Y-%m-%d %H:%M:%S", time_array)
 
     def __str__(self) -> str:
@@ -255,7 +252,7 @@ class Item:
 
 class Keyword:
     __keyword = ''
-    __update_time = -1.0
+    __update_time = -1
 
     def __init__(self) -> None:
         super().__init__()

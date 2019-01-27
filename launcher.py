@@ -20,6 +20,9 @@ from typing import Optional, Callable, Any, Iterable, Mapping
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import NoSuchElementException
+from selenium.common.exceptions import NoSuchWindowException
+from selenium.common.exceptions import StaleElementReferenceException
 from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.support.wait import WebDriverWait
 from selenium.webdriver.remote.webelement import WebElement
@@ -57,7 +60,16 @@ class Launcher:
                 # 1.根据搜索列表不断更新价格信息或是新增商品
                 keyword_list = self.get_commodity_type_list()
                 # 访问京东
-                self.access_jd(chrome, keyword_list)
+                try:
+                    self.access_jd(chrome, keyword_list)
+                except (TimeoutException, StaleElementReferenceException):
+                    logging.error("[Launcher.launch_spider()]:JD Result page haven't appear or stable although refresh!"
+                                  + (traceback.print_exc() or "None"))
+                    # 依然失败，需要介入
+                    link = LinkAdministrator()
+                    link.send_message("[EC-Spider shut down]", "[Launcher.access_jd()]:JD Result page haven't "
+                                      "appear although refresh!" + (traceback.print_exc() or "None"))
+                    break
                 # 访问淘宝
                 # self.access_taobao(chrome, keyword_list)
                 # 3.若此轮执行耗时超过预计时间，进行商品的删除操作。删除依据为（销量，近期访问次数）
@@ -167,26 +179,17 @@ class Launcher:
                     ), "Search result not appear")
                 except TimeoutException:
                     browser.refresh()  # 刷新重试一遍
-                    try:
-                        wdw.until(CEC.PageViewsAppear(
-                            [(By.XPATH, jlpr.jd_list_page_goods_list_xpath),
-                             (By.XPATH, jlpr.jd_list_page_turn_xpath)]
-                        ), "Search result not appear")
-                    except TimeoutException:
-                        logging.error("[Launcher.access_jd()]:JD Result page haven't appear although refresh!"
-                                      + (traceback.print_exc() or "None"))
-                        # 依然失败，需要介入
-                        link = LinkAdministrator()
-                        link.send_message("[EC-Spider shut down]", "[Launcher.access_jd()]:JD Result page haven't "
-                                          "appear although refresh!" + (traceback.print_exc() or "None"))
-                        break
+                    wdw.until(CEC.PageViewsAppear(
+                        [(By.XPATH, jlpr.jd_list_page_goods_list_xpath),
+                         (By.XPATH, jlpr.jd_list_page_turn_xpath)]
+                    ), "Search result not appear")
                 try:
                     temp = browser.find_element(By.XPATH, '//div[@class=\'notice-search\']')
                     if temp is not None and self.__jd_no_result_str in temp.text:
                         # 出现"抱歉，没有找到与“***”相关的商品"
                         logging.warning("JD没有找到与[" + kw + "]相关的商品", browser.current_url)
                         break
-                except selenium.common.exceptions.NoSuchElementException:
+                except NoSuchElementException:
                     # 找不到元素正常，说明该关键字有结果
                     pass
                 # 跳转到页面最底部
@@ -195,10 +198,15 @@ class Launcher:
                 wdw.until(CEC.ResultAllAppear(), "Wait all result failed.")
                 time.sleep(0.4)
                 # 读取价格信息并更新
-                commodity_list = jlpr.read_commodities(browser, kw)
-                helper.insert_commodities(commodity_list)
-                item_list = jlpr.read_items(browser)
-                helper.insert_items(item_list)
+                try:
+                    helper.insert_commodities(jlpr.read_commodities(browser, kw))
+                    helper.insert_items(jlpr.read_items(browser))
+                except StaleElementReferenceException:
+                    browser.refresh()
+                    logging.warning("Launcher.access_jd(): Not stable." + (traceback.print_exc() or "None"))
+                    # 重试一次
+                    helper.insert_commodities(jlpr.read_commodities(browser, kw))
+                    helper.insert_items(jlpr.read_items(browser))
                 # 翻页，页码+1
                 browser.find_element(By.XPATH, '/*').send_keys(Keys.RIGHT)
                 page_num += 1
@@ -358,7 +366,7 @@ class JdDetailPageReader:
     def is_jd_detail_page(self, browser: selenium.webdriver.Chrome):
         try:
             browser.find_element(By.XPATH, self.__jd_detail_page_detect)
-        except selenium.common.exceptions.NoSuchElementException:
+        except NoSuchElementException:
             return False
         return True
 
@@ -488,7 +496,7 @@ class JdListPageReader:
                     # 补全keyword，通过哪个关键字搜到的
                     comm.keyword = keyword
                     goods_list.append(comm)
-            except selenium.common.exceptions.StaleElementReferenceException:
+            except StaleElementReferenceException:
                 logging.warning("JdListPageReader.read_commodities():"
                                 "Cause JavaScript changed page, can't read element.")
                 continue
@@ -518,7 +526,7 @@ class JdListPageReader:
                 item = self.read_single_goods_item(goods_dom)
                 if item is not None:
                     item_list.append(item)
-            except selenium.common.exceptions.StaleElementReferenceException:
+            except StaleElementReferenceException:
                 logging.warning("JdListPageReader.read_items():"
                                 "Cause JavaScript changed page, can't read element.")
                 continue
@@ -527,7 +535,7 @@ class JdListPageReader:
     def is_jd_list_page(self, browser: selenium.webdriver.Chrome) -> bool:
         try:
             browser.find_element(By.XPATH, self.__jd_list_page_detect)
-        except selenium.common.exceptions.NoSuchElementException:
+        except NoSuchElementException:
             return False
         return True
 
@@ -559,8 +567,9 @@ class JdListPageReader:
             # 获取店铺名
             comm.store_name = self.get_store_name(element)
             # 默认访问次数为0
-        except selenium.common.exceptions.NoSuchElementException:
-            logging.warning('Get single goods, No such element:' + (traceback.print_exc() or 'None'))
+        except NoSuchElementException:
+            logging.warning('Get single goods, No such element:' +
+                            (element or element.text) + (traceback.print_exc() or 'None'))
             return None
         return comm
 
@@ -926,14 +935,18 @@ class DetailThread(threading.Thread):
                 # 设立时间标志，超时自行退出(访问详情页，效率会特别低)
                 if not self.__runnable_flag or self.__round_max_end_time < time.time():
                     break
-                chrome.get(it[0])
                 try:
+                    chrome.get(it[0])
                     wdw.until(EC.presence_of_element_located((By.XPATH, jdpr.jd_detail_page_detect))
                               , "[DetailThread.run()]: wait timeout.")
                     item = jdpr.read_item(chrome)
                     helper.insert_item(item)
                 except TimeoutException:
                     logging.info(it[0] + " Cause TimeoutException, haven't record.")
+                except NoSuchWindowException:
+                    logging.warning("[DetailThread.run()]: Chrome has shut down.")
+                    # 因意外打断，此次更新到此为止，不删除未更新的数据
+                    return
                 counter += 1
         # 删除counter及以后的商品记录
         item_list = item_list[counter:]

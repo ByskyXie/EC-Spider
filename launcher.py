@@ -119,7 +119,7 @@ class Launcher:
         options.add_experimental_option('prefs', prefs)
         options.add_argument("disable-cache")
         # 启动浏览器的时候不想看的浏览器运行，那就加载浏览器的静默模式，让它在后台偷偷运行。用headless
-        # options.add_argument('headless')
+        options.add_argument('headless')
         return options
 
     def access_taobao(self, browser: selenium.webdriver.Chrome, kw_list: list):
@@ -337,16 +337,19 @@ class JdDetailPageReader:
         else:
             # 说明不需要选择型号，或者说没有型号信息
             pass
-        # 获取价格
-        item.price = self.get_price(browser)
-        # 获取plus会员价格
-        item.plus_price = self.get_plus_price(browser)
         # 获取商品url,可能因加载中等失败
         try:
             item.url = browser.current_url
         except TimeoutException:
             logging.warning('Get url failed! at method:JdDetailReader.read_item()')
             return None
+        # 获取价格
+        item.price = self.get_price(browser)
+        if item.price == -1:
+            logging.warning("JdDetailPageReader:Get price is -1\n" + item.url)
+            return None
+        # 获取plus会员价格
+        item.plus_price = self.get_plus_price(browser)
         # 领券
         ticket_dom = self.get_ticket_dom(browser)
         if ticket_dom is not None and len(ticket_dom) != 0:
@@ -562,15 +565,19 @@ class JdListPageReader:
             # 获取商品name
             comm.item_name = comm.item_title
             # 获取商品分类（列表下是不存在的）
-            # 获取店铺url
-            comm.store_url = self.get_store_url(element)
-            # 获取店铺名
-            comm.store_name = self.get_store_name(element)
-            # 默认访问次数为0
         except NoSuchElementException:
             logging.warning('Get single goods, No such element:' +
-                            (element or element.text) + (traceback.print_exc() or 'None'))
+                            (element.text or "None ") + (traceback.print_exc() or 'None'))
             return None
+        try:
+            # 获取店铺名
+            comm.store_name = self.get_store_name(element)
+            # 获取店铺url
+            comm.store_url = self.get_store_url(element)
+            # 默认访问次数为0
+        except NoSuchElementException:
+            logging.warning("Get single goods, Can't get store info:" +
+                            (element.text or "None ") + (traceback.print_exc() or 'None'))
         return comm
 
     def read_single_goods_item(self, element: WebElement) \
@@ -586,11 +593,14 @@ class JdListPageReader:
         item.data_begin_time = time.time()
         # 获取颜色标题及所选项目值（详情列表不存在的）
         # 获取版本标题及所选项目值（详情列表不存在的）
-        # 获取价格
-        item.price = self.get_price(element)
-        # 获取plus会员价格（详情列表不存在的）
         # 获取商品url
         item.url = self.get_item_url(element)
+        # 获取价格
+        item.price = self.get_price(element)
+        if item.price == -1:
+            logging.warning("JdListPageReader:Get price is -1\n" + item.url)
+            return None
+        # 获取plus会员价格（详情列表不存在的）
         # 领券（详情列表不存在的）
         # 库存:京东不显示库存量，只有有无货之分（详情列表不存在的）
         # 快递费:京东各省价格均不同，有货情况也不同故不做记录（详情列表不存在的）
@@ -889,6 +899,7 @@ class LinkAdministrator:
     __host = 'smtp.qq.com'
     __port = 465
     __reciver = 'byskyxie@qq.com'
+    __to = "byskyXie"
 
     def send_message(self, title: str, msg: str, user: str = None, pwd: str = None):
         if user is None:
@@ -899,8 +910,10 @@ class LinkAdministrator:
             except FileNotFoundError:
                 print("No account info in smtp.txt, Or you can supply param 'user' and 'pwd'")
                 return
-        message = MIMEText(msg, 'txt', 'utf-8')
+        message = MIMEText(msg, 'plain', 'utf-8')
         message['Subject'] = Header(title, 'utf-8')
+        message['From'] = Header("EC-Spider", 'utf-8')
+        message['To'] = Header(self.__to, 'utf-8')
         smtp = smtplib.SMTP()
         smtp.connect(self.__host)
         smtp.login(user, pwd)
@@ -937,8 +950,8 @@ class DetailThread(threading.Thread):
                     break
                 try:
                     chrome.get(it[0])
-                    wdw.until(EC.presence_of_element_located((By.XPATH, jdpr.jd_detail_page_detect))
-                              , "[DetailThread.run()]: wait timeout.")
+                    wdw.until(EC.presence_of_element_located((By.XPATH, jdpr.jd_detail_page_detect)),
+                              "[DetailThread.run()]: wait timeout.")
                     item = jdpr.read_item(chrome)
                     helper.insert_item(item)
                 except TimeoutException:

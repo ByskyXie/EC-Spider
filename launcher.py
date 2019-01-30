@@ -240,7 +240,16 @@ class Launcher:
             output_file.writelines('[Max Allow Duration]:' + str(self.__round_max_duration))
 
     def get_commodity_type_list(self) -> list:
-        list = ['U盘', '手机']
+        list = []
+        try:
+            file = open("keywords.txt")
+            while True:
+                kw = file.readline()
+                if not kw:
+                    break
+                list.append(kw)
+        except FileNotFoundError:
+            return ['U盘', '手机']
         # 从外部文件读取搜索列表
         return list
 

@@ -863,6 +863,7 @@ class DatabaseHelper:
             return
         with self.__connection.cursor() as cursor:
             cursor.execute(self.__sql_delete_commodity % url_md5)
+            self.__connection.commit()
             cursor.execute(self.__sql_delete_item % url_md5)
             self.__connection.commit()
 
@@ -871,6 +872,7 @@ class DatabaseHelper:
             return
         with self.__connection.cursor() as cursor:
             cursor.executemany(self.__sql_delete_commodities, url_md5_list)
+            self.__connection.commit()
             cursor.executemany(self.__sql_delete_items, url_md5_list)
             self.__connection.commit()
 
@@ -975,6 +977,7 @@ class DetailThread(threading.Thread):
         md5_list = []
         for it in item_list:
             md5_list.append(it[1])
+        # TODO:未访问达到一定天数就删除
         helper.delete_commodities(md5_list)
 
     def stop(self):

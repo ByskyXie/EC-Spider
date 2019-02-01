@@ -24,6 +24,7 @@ CREATE TABLE Item(
 	item_url TEXT NOT NULL,		-- 网址 --
 	data_begin_time DOUBLE NOT NULL,		-- 该价格开始日期 --
 	data_end_time DOUBLE NOT NULL,		-- 该价格结束日期 --
+-- TODO:最近访问日期，定期删除
 	item_price DOUBLE NOT NULL,		-- 单价 --
 	plus_price DOUBLE,		-- plus会员价格 --
 	ticket VARCHAR(250),		-- 满减券 --
@@ -37,6 +38,7 @@ CREATE TABLE Item(
 	spec4 TEXT,		-- 可选字段4 --
 	spec5 TEXT,		-- 可选字段5 --
 	spec_other TEXT,	-- 其余可选字段合并 --
+--	TODO: foreign key
 	PRIMARY KEY(item_url_md5 ASC, data_begin_time DESC) -- 默认按时间降序排列 --
 ) default charset = utf8;
 

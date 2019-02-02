@@ -6,6 +6,6 @@
     "default_icon": "icon.png",
     "default_popup": "popup.html"
   },
-  "permissions": ["http://api.flickr.com/"],
+  "permissions": ["https://*.jd.com/","https://*.tmall.com/","https://*.taobao.com/"],
   "manifest_version": 2
 }

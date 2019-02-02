@@ -14,7 +14,8 @@ CREATE TABLE commodity(
 	keyword varchar(250) NOT NULL,  -- 通过什么关键字搜到该商品的？ --
 	store_name VARCHAR(250) NOT NULL,	-- 店铺名 --
 	store_url TEXT NOT NULL,		-- 店铺URL --
-	access_num INT NOT NULL			-- 近期访问次数，定时清空 --
+	access_num INT NOT NULL,			-- 近期访问次数，定时清空 --
+    FOREIGN KEY(keyword) REFERENCES keyword(keyword)
 ) default charset = utf8;
 
 
@@ -23,8 +24,8 @@ CREATE TABLE Item(
 	item_url_md5 CHAR(32) NOT NULL, -- 唯一标识一个商品 --
 	item_url TEXT NOT NULL,		-- 网址 --
 	data_begin_time DOUBLE NOT NULL,		-- 该价格开始日期 --
+	data_latest_time DOUBLE,        -- 最近访问日期 --
 	data_end_time DOUBLE NOT NULL,		-- 该价格结束日期 --
--- TODO:最近访问日期，定期删除
 	item_price DOUBLE NOT NULL,		-- 单价 --
 	plus_price DOUBLE,		-- plus会员价格 --
 	ticket VARCHAR(250),		-- 满减券 --
@@ -38,13 +39,13 @@ CREATE TABLE Item(
 	spec4 TEXT,		-- 可选字段4 --
 	spec5 TEXT,		-- 可选字段5 --
 	spec_other TEXT,	-- 其余可选字段合并 --
---	TODO: foreign key
+    FOREIGN KEY(item_url_md5) REFERENCES commodity(item_url_md5),
 	PRIMARY KEY(item_url_md5 ASC, data_begin_time DESC) -- 默认按时间降序排列 --
 ) default charset = utf8;
 
 
 CREATE TABLE keyword(
-	keyword VARCHAR(50) PRIMARY KEY, -- 搜索关键词 --
+	keyword VARCHAR(250) PRIMARY KEY, -- 搜索关键词 --
 	update_time DOUBLE NOT NULL	-- 该关键词更新日期 --
 ) default charset = utf8;
 

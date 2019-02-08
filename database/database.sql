@@ -24,7 +24,7 @@ CREATE TABLE Item(
 	item_url_md5 CHAR(32) NOT NULL, -- 唯一标识一个商品 --
 	item_url TEXT NOT NULL,		-- 网址 --
 	data_begin_time DOUBLE NOT NULL,		-- 该价格开始日期 --
-	data_latest_time DOUBLE,        -- 最近访问日期 --
+	data_latest_time DOUBLE NOT NULL,        -- 最近访问日期 --
 	data_end_time DOUBLE NOT NULL,		-- 该价格结束日期 --
 	item_price DOUBLE NOT NULL,		-- 单价 --
 	plus_price DOUBLE,		-- plus会员价格 --

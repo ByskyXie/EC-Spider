@@ -4,6 +4,11 @@ CREATE DATABASE ec_spider;
 
 use ec_spider;
 
+CREATE TABLE keyword(
+	keyword VARCHAR(250) PRIMARY KEY, -- 搜索关键词 --
+	update_time DOUBLE NOT NULL	-- 该关键词更新日期 --
+) default charset = utf8;
+
 CREATE TABLE commodity(
 	-- Mysql 所能接受最大长度为767 --
 	item_url_md5 CHAR(32) PRIMARY KEY, -- 商品url哈希码，作为主键 --
@@ -43,11 +48,6 @@ CREATE TABLE Item(
 	PRIMARY KEY(item_url_md5 ASC, data_begin_time DESC) -- 默认按时间降序排列 --
 ) default charset = utf8;
 
-
-CREATE TABLE keyword(
-	keyword VARCHAR(250) PRIMARY KEY, -- 搜索关键词 --
-	update_time DOUBLE NOT NULL	-- 该关键词更新日期 --
-) default charset = utf8;
 
 
 

@@ -101,6 +101,7 @@ class Item:
     __ticket = ''
     inventory = -1
     __data_begin_time = time.time()
+    __data_latest_time = __data_begin_time  # latest access time.
     __data_end_time = CURRENT_CODE
     __sales_amount = 0
     __transport_fare = -1
@@ -185,6 +186,16 @@ class Item:
         self.__data_begin_time = value
 
     @property
+    def data_latest_time(self):
+        return self.__data_latest_time
+
+    @data_latest_time.setter
+    def data_latest_time(self, value: float):
+        if type(value) != float:
+            return
+        self.__data_latest_time = value
+
+    @property
     def data_end_time(self) -> time:
         return self.__data_end_time
 
@@ -236,6 +247,10 @@ class Item:
         time_array = time.localtime(self.__data_begin_time)
         return time.strftime("%Y-%m-%d %H:%M:%S", time_array)
 
+    def get_str_latest_time(self):
+        time_array = time.localtime(self.__data_latest_time)
+        return time.strftime("%Y-%m-%d %H:%M:%S", time_array)
+
     def get_str_end_time(self):
         try:
             time_array = time.localtime(self.__data_end_time)
@@ -246,8 +261,9 @@ class Item:
     def __str__(self) -> str:
         return self.url + '\n[price]:' + self.price.__str__() + '\t' + self.plus_price.__str__() + '\n[ticket]:\n' \
                + self.ticket + '\n[inventory]:' + self.inventory.__str__() + '\n[time]:' + self.get_str_begin_time() \
-               + ' -> ' + self.get_str_end_time() + '\n[sales]:' + self.sales_amount.__str__() + '\n[transport]:' \
-               + self.transport_fare.__str__() + '\n[speci]:' + self.all_specification
+               + ' -> ' + self.get_str_end_time() + '\n[latest time]:' + self.get_str_latest_time() + '\n[sales]:' \
+               + self.sales_amount.__str__() + '\n[transport]:' + self.transport_fare.__str__() \
+               + '\n[speci]:' + self.all_specification
 
 
 class Keyword:

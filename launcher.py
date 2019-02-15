@@ -38,8 +38,10 @@ class Launcher:
     __tb_max_duration = __round_max_duration * 0
 
     __thread_pool = []  # 线程池
+    __helper = None
 
     def __init__(self) -> None:
+        self.__helper = DatabaseHelper()
         super().__init__()
 
     def launch_spider(self, auto_mode=False):
@@ -119,7 +121,7 @@ class Launcher:
         options.add_experimental_option('prefs', prefs)
         options.add_argument("disable-cache")
         # 启动浏览器的时候不想看的浏览器运行，那就加载浏览器的静默模式，让它在后台偷偷运行。用headless
-        options.add_argument('headless')
+        # options.add_argument('headless')
         return options
 
     def access_taobao(self, browser: selenium.webdriver.Chrome, kw_list: list):
@@ -137,7 +139,6 @@ class Launcher:
         # 京东
         position = 0
         jd_begin_time = time.time()
-        helper = DatabaseHelper()
         jlpr = JdListPageReader()
         wdw = WebDriverWait(browser, self.__jd_max_wait_time, 0.7)
         #############
@@ -199,14 +200,14 @@ class Launcher:
                 time.sleep(0.4)
                 # 读取价格信息并更新
                 try:
-                    helper.insert_commodities(jlpr.read_commodities(browser, kw))
-                    helper.insert_items(jlpr.read_items(browser))
+                    self.__helper.insert_commodities(jlpr.read_commodities(browser, kw))
+                    self.__helper.insert_items(jlpr.read_items(browser))
                 except StaleElementReferenceException:
                     browser.refresh()
                     logging.warning("Launcher.access_jd(): Not stable." + (traceback.print_exc() or "None"))
                     # 重试一次
-                    helper.insert_commodities(jlpr.read_commodities(browser, kw))
-                    helper.insert_items(jlpr.read_items(browser))
+                    self.__helper.insert_commodities(jlpr.read_commodities(browser, kw))
+                    self.__helper.insert_items(jlpr.read_items(browser))
                 # 翻页，页码+1
                 browser.find_element(By.XPATH, '/*').send_keys(Keys.RIGHT)
                 page_num += 1
@@ -239,19 +240,16 @@ class Launcher:
             output_file.writelines(out_str)
             output_file.writelines('[Max Allow Duration]:' + str(self.__round_max_duration))
 
-    def get_commodity_type_list(self) -> list:
-        kw_list = []
-        try:
-            file = open("keywords.txt")
+    def add_keyword(self):
+        with open("keywords.txt", encoding='UTF-8') as kwf:
             while True:
-                kw = file.readline()
-                if not kw:
+                kw = kwf.readline()
+                if len(kw) == 0:
                     break
-                kw_list.append(kw)
-        except FileNotFoundError:
-            return ['U盘', '手机']
-        # 从外部文件读取搜索列表
-        return kw_list
+                self.__helper.insert_keyword(kw)
+
+    def get_commodity_type_list(self) -> list:
+        return self.__helper.get_keyword_list()
 
 
 class JdDetailPageReader:
@@ -512,6 +510,8 @@ class JdListPageReader:
                 logging.warning("JdListPageReader.read_commodities():"
                                 "Cause JavaScript changed page, can't read element.")
                 continue
+        # print("【This page read [", goods_list.__len__(), "] element】")
+        # print(goods_list)
         return goods_list
 
     def read_items(self, browser: selenium.webdriver.Chrome) -> list:
@@ -689,6 +689,10 @@ class DatabaseHelper:
         "UPDATE item " \
         "SET data_end_time=%f " \
         "WHERE item_url_md5='%s' and data_end_time=%f;"
+    __sql_update_item_latest_time = \
+        "UPDATE item " \
+        "SET data_latest_time=%f " \
+        "WHERE item_url_md5='%s' and data_end_time=%f;"
     __sql_before_date = \
         "SELECT DISTINCT t1.item_url,sales_amount,access_num " \
         "FROM item,(SELECT item_url_md5,item_url,access_num FROM commodity) as t1 " \
@@ -719,6 +723,11 @@ class DatabaseHelper:
     __sql_delete_items = \
         "DELETE FROM item " \
         "WHERE item_url_md5=%s;"
+    __sql_get_keyword = \
+        "SELECT keyword FROM keyword;"
+    __sql_insert_keyword = \
+        "INSERT INTO keyword(keyword,update_time) " \
+        "VALUES('%s',%f);"
     __connection = None
 
     def __init__(self):
@@ -762,6 +771,7 @@ class DatabaseHelper:
 
     def query_refresh_before_date_items(self, time_stamp=time.time(), keyword=None) -> tuple:
         """
+        method: Get items info that haven't update before given time(and keyword).
         :param time_stamp:
         :param keyword:
         :return: list. and the item is item_url_md5.
@@ -820,7 +830,7 @@ class DatabaseHelper:
     def insert_items(self, item_list: list):
         if type(item_list) is not list or len(item_list) == 0 \
                 or type(item_list[0]) is not Item:
-            return
+            return -1
         for item in item_list:
             # 逐一校验插入
             self.insert_item(item)
@@ -845,16 +855,16 @@ class DatabaseHelper:
         :return:
         """
         if type(item) != Item:
-            return
+            return -1
         with self.__connection.cursor() as cursor:
             if not self.is_item_price_changed(item, True):
                 # 说明已经有记录，且价格未改变
-                return
+                return -1
             # 导入新记录，list内元素必须为tuple:(value1,value2,value3...)
             cursor.execute(self.__sql_insert_item % (
-                item.item_url_md5, item.url, item.data_begin_time, item.data_end_time, item.price, item.plus_price,
-                item.ticket, item.inventory, item.sales_amount, item.transport_fare, item.all_specification,
-                item.spec1, item.spec2, item.spec3, item.spec4, item.spec5, item.spec_other
+                item.item_url_md5, item.url, item.data_begin_time, item.data_latest_time, item.data_end_time,
+                item.price, item.plus_price, item.ticket, item.inventory, item.sales_amount, item.transport_fare,
+                item.all_specification, item.spec1, item.spec2, item.spec3, item.spec4, item.spec5, item.spec_other
             ))
             self.__connection.commit()
 
@@ -898,13 +908,36 @@ class DatabaseHelper:
                              '\nget row is None\n' + item.__str__())
                 # 说明之前未记录该商品信息
                 return True
+            # 记录最近访问时间
+            cursor.execute(self.__sql_update_item_latest_time % (
+                item.data_begin_time, item.item_url_md5, Item.CURRENT_CODE))
+            self.__connection.commit()
             if item.price == row[4]:
                 return False
             if if_changed_update_end_time:
+                # 更新该记录结束时间
                 cursor.execute(self.__sql_update_item_end_time % (
                     item.data_begin_time, item.item_url_md5, Item.CURRENT_CODE))
                 self.__connection.commit()
         return True
+
+    def get_keyword_list(self) -> list:
+        kw_list = []
+        with self.__connection.cursor() as cursor:
+            cursor.execute(self.__sql_get_keyword)
+            for i in cursor.fetchall():
+                kw_list.append(i[0])
+            return kw_list
+
+    def insert_keyword(self, value: str):
+        if type(value) != str:
+            return
+        with self.__connection.cursor() as cursor:
+            try:
+                cursor.execute(self.__sql_insert_keyword % (value.strip(), time.time()))
+                self.__connection.commit()
+            except pymysql.err.IntegrityError:
+                pass
 
 
 class LinkAdministrator:
@@ -987,6 +1020,7 @@ class DetailThread(threading.Thread):
 
 if __name__ == '__main__':
     laun = Launcher()
+    laun.add_keyword()
     laun.launch_spider()
     print('Finished.')
 

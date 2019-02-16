@@ -216,9 +216,6 @@ class Launcher:
             dt = DetailThread(self.__round_begin_time, kw)
             dt.start()
             self.__thread_pool.append(dt)
-            # TODO:通知异常
-            # link = LinkAdministrator()
-            # link.send_message('JD get button failed:')
 
     def get_time_spent_percent(self) -> float:
         return (time.time() - self.__round_begin_time)/self.__round_max_duration
@@ -253,6 +250,7 @@ class Launcher:
 
 
 class JdDetailPageReader:
+    # TODO:获取完整HTML文档：WebElement.get_attribute("outerHTML")
     # 商品属性对应xpath 考虑优先从外部文本文件读入，方便服务器端维护
     __jd_detail_page_detect = "//div[@class=\'product-intro clearfix\']/div[@class=\'itemInfo-wrap\']"
     __jd_detail_page_specification_xpath = "//*[@class=\'summary p-choose-wrap\']/*"
@@ -436,7 +434,7 @@ class JdDetailPageReader:
 
 class JdListPageReader:
     __jd_list_page_goods_list_amount = 60  # TODO：后期可以通过读取加载完成页面的实际显示数量动态调整
-    __jd_sales_amount_limit = 3000  # 高于该销量的商品才记录
+    __jd_sales_amount_limit = 100  # 高于该销量的商品才记录，这个销量是否作为低门槛好一些？因为搜索的话电商网站已经优化过了
     # 商品属性对应xpath 考虑优先从外部文本文件读入，方便服务器端维护
     __jd_list_page_detect = "//div[@id=\'J_main\']//div[@id=\'J_goodsList\']"
     __jd_list_page_goods_list_xpath = "//div[@id=\'J_goodsList\']/ul/*"  # 搜索结果商品列表DOM SET
@@ -498,6 +496,7 @@ class JdListPageReader:
             # 读取单个commodity，查看是否符合销量限制
             remark = self.get_sales_amount(goods_dom)
             if remark < self.jd_sales_amount_limit:
+                logging.info("[销量太低不予记录]：", goods_dom.text)
                 continue
             try:
                 # 读取
@@ -510,8 +509,6 @@ class JdListPageReader:
                 logging.warning("JdListPageReader.read_commodities():"
                                 "Cause JavaScript changed page, can't read element.")
                 continue
-        # print("【This page read [", goods_list.__len__(), "] element】")
-        # print(goods_list)
         return goods_list
 
     def read_items(self, browser: selenium.webdriver.Chrome) -> list:
@@ -745,11 +742,15 @@ class DatabaseHelper:
             a member connection of mysql, it confirm are alive.
         """
         if self.__connection is None:
-            # TODO:从外部文件读入用户名/密码/host！
-            self.__connection = pymysql.connect(
-                user='root', password='mysql233', charset='utf8',
-                database='ec_spider', use_unicode=True
-            )
+            # Tips:从外部文件读入用户名/密码/数据库名
+            with open("mysql.txt", encoding='UTF-8') as opt:
+                usr = opt.readline().strip()  # first line: username
+                pwd = opt.readline().strip()  # second line: password
+                db = opt.readline().strip()  # third line: database name
+                self.__connection = pymysql.connect(
+                    user=usr, password=pwd, charset='utf8',
+                    database=db, use_unicode=True
+                )
         # 防止之前关闭，重新连接
         self.__connection.ping(True)
         return self.__connection

@@ -19,6 +19,7 @@ from selenium import webdriver
 from typing import Optional, Callable, Any, Iterable, Mapping
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.by import By
+from selenium.webdriver.common.action_chains import *
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import NoSuchElementException
 from selenium.common.exceptions import NoSuchWindowException
@@ -422,13 +423,13 @@ class JdDetailPageReader:
     def get_price(self, browser: selenium.webdriver.Chrome) -> float:
         try:
             return float(browser.find_element(By.XPATH, self.__jd_detail_page_price_xpath).text)
-        except ValueError:
+        except (ValueError, NoSuchElementException):
             return -1
 
     def get_plus_price(self, browser: selenium.webdriver.Chrome) -> float:
         try:
             return float(browser.find_element(By.XPATH, self.__jd_detail_page_plus_price_xpath).text[1:])
-        except ValueError:
+        except (ValueError, NoSuchElementException):
             return -1
 
 
@@ -496,19 +497,28 @@ class JdListPageReader:
             # 读取单个commodity，查看是否符合销量限制
             remark = self.get_sales_amount(goods_dom)
             if remark < self.jd_sales_amount_limit:
-                logging.info("[销量太低不予记录]：", goods_dom.text)
+                logging.info("[销量太低不予记录商品]：", goods_dom.text)
                 continue
             try:
                 # 读取
                 comm = self.read_single_goods_commodity(goods_dom)
+                if comm is None:
+                    # 若数据为空，模拟鼠标悬停,等待信息加载完成
+                    ActionChains(browser).move_to_element(goods_dom).perform()
+                    wdw = WebDriverWait(goods_dom, 3, 0.2)
+                    wdw.until(EC.presence_of_element_located((By.XPATH, self.__jd_list_page_store_name_xpath)),
+                              "[JdListPagerReader.read_commodities()]: wait timeout.")
+                    comm = self.read_single_goods_commodity(goods_dom)
                 if comm is not None:
                     # 补全keyword，通过哪个关键字搜到的
                     comm.keyword = keyword
                     goods_list.append(comm)
+            except TimeoutException:
+                logging.warning("Time out for wait single good.")
             except StaleElementReferenceException:
                 logging.warning("JdListPageReader.read_commodities():"
                                 "Cause JavaScript changed page, can't read element.")
-                continue
+            continue
         return goods_list
 
     def read_items(self, browser: selenium.webdriver.Chrome) -> list:
@@ -529,6 +539,7 @@ class JdListPageReader:
             # 读取单个commodity，查看是否符合销量限制
             remark = self.get_sales_amount(goods_dom)
             if remark < self.jd_sales_amount_limit:
+                logging.info("[销量太低不予记录数据]：", goods_dom.text)
                 continue
             try:
                 # 读取单个item
@@ -572,8 +583,8 @@ class JdListPageReader:
             comm.item_name = comm.item_title
             # 获取商品分类（列表下是不存在的）
         except NoSuchElementException:
-            logging.warning('Get single goods, No such element:' +
-                            (element.text or "None ") + (traceback.print_exc() or 'None'))
+            logging.warning('[Get single goods, No such element]:' +
+                            (element.get_attribute("outerHTML") or "None ") + (traceback.print_exc() or 'None'))
             return None
         try:
             # 获取店铺名
@@ -583,7 +594,7 @@ class JdListPageReader:
             # 默认访问次数为0
         except NoSuchElementException:
             logging.warning("Get single goods, Can't get store info:" +
-                            (element.text or "None ") + (traceback.print_exc() or 'None'))
+                            (element.get_attribute("outerHTML") or "None ") + (traceback.print_exc() or 'None'))
         return comm
 
     def read_single_goods_item(self, element: WebElement) \
@@ -862,12 +873,15 @@ class DatabaseHelper:
                 # 说明已经有记录，且价格未改变
                 return -1
             # 导入新记录，list内元素必须为tuple:(value1,value2,value3...)
-            cursor.execute(self.__sql_insert_item % (
-                item.item_url_md5, item.url, item.data_begin_time, item.data_latest_time, item.data_end_time,
-                item.price, item.plus_price, item.ticket, item.inventory, item.sales_amount, item.transport_fare,
-                item.all_specification, item.spec1, item.spec2, item.spec3, item.spec4, item.spec5, item.spec_other
-            ))
-            self.__connection.commit()
+            try:
+                cursor.execute(self.__sql_insert_item % (
+                    item.item_url_md5, item.url, item.data_begin_time, item.data_latest_time, item.data_end_time,
+                    item.price, item.plus_price, item.ticket, item.inventory, item.sales_amount, item.transport_fare,
+                    item.all_specification, item.spec1, item.spec2, item.spec3, item.spec4, item.spec5, item.spec_other
+                ))
+                self.__connection.commit()
+            except pymysql.err.IntegrityError:
+                logging.warning("[Item insert error]:", traceback.print_exc())
 
     def delete_commodity(self, url_md5: str):
         if type(url_md5) is not str:
@@ -913,8 +927,9 @@ class DatabaseHelper:
             cursor.execute(self.__sql_update_item_latest_time % (
                 item.data_begin_time, item.item_url_md5, Item.CURRENT_CODE))
             self.__connection.commit()
-            if item.price == row[4]:
+            if item.price == row[5]:
                 return False
+            logging.info("[Price changed]:", item.price, "!=", row[5])
             if if_changed_update_end_time:
                 # 更新该记录结束时间
                 cursor.execute(self.__sql_update_item_end_time % (
@@ -1022,7 +1037,10 @@ class DetailThread(threading.Thread):
 if __name__ == '__main__':
     laun = Launcher()
     laun.add_keyword()
-    laun.launch_spider()
+    try:
+        laun.launch_spider()
+    except Exception:
+        LinkAdministrator().send_message("EC-Spider shut down", (traceback.print_exc() or 'None'))
     print('Finished.')
 
 # https://item.jd.com/8735304.html#none

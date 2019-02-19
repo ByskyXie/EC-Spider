@@ -90,6 +90,7 @@ class Launcher:
                 time.sleep(blank_time)
             else:
                 logging.warning('Full spent timeout:' + str(- blank_time) + 'Second.')
+        print("Spider stop.")
 
     @staticmethod
     def anti_detected_initial(browser: selenium.webdriver.Chrome):
@@ -197,8 +198,11 @@ class Launcher:
                 # 跳转到页面最底部
                 browser.execute_script("window.scrollTo(0, document.body.scrollHeight);")
                 # 等待60条记录全出现后再读取
-                wdw.until(CEC.ResultAllAppear(), "Wait all result failed.")
-                time.sleep(0.4)
+                try:
+                    wdw.until(CEC.ResultAllAppear(), "Wait all result failed.")
+                except TimeoutException:
+                    browser.refresh()
+                    wdw.until(CEC.ResultAllAppear(), "Wait all result failed.")
                 # 读取价格信息并更新
                 try:
                     self.__helper.insert_commodities(jlpr.read_commodities(browser, kw))
@@ -505,7 +509,7 @@ class JdListPageReader:
                 if comm is None:
                     # 若数据为空，模拟鼠标悬停,等待信息加载完成
                     ActionChains(browser).move_to_element(goods_dom).perform()
-                    wdw = WebDriverWait(goods_dom, 3, 0.2)
+                    wdw = WebDriverWait(goods_dom, 5, 0.2)
                     wdw.until(EC.presence_of_element_located((By.XPATH, self.__jd_list_page_store_name_xpath)),
                               "[JdListPagerReader.read_commodities()]: wait timeout.")
                     comm = self.read_single_goods_commodity(goods_dom)
@@ -702,21 +706,21 @@ class DatabaseHelper:
         "SET data_latest_time=%f " \
         "WHERE item_url_md5='%s' and data_end_time=%f;"
     __sql_before_date = \
-        "SELECT DISTINCT t1.item_url,sales_amount,access_num " \
+        "SELECT DISTINCT t1.item_url,t1.item_url_md5,item.sales_amount,access_num,item.data_latest_time " \
         "FROM item,(SELECT item_url_md5,item_url,access_num FROM commodity) as t1 " \
         "WHERE item.item_url_md5 NOT IN (" \
         "  SELECT item_url_md5 " \
         "  FROM item " \
-        "  WHERE data_end_time > %f) " \
+        "  WHERE data_end_time < %f) " \
         "AND item.item_url_md5 = t1.item_url_md5 " \
         "ORDER BY access_num DESC, sales_amount DESC;"  # 所给日期后均未更新的商品
     __sql_keyword_before_date = \
-        "SELECT DISTINCT t1.item_url,t1.item_url_md5 " \
+        "SELECT DISTINCT t1.item_url,t1.item_url_md5,item.sales_amount,access_num,item.data_latest_time " \
         "FROM item,(SELECT item_url_md5,item_url,access_num,keyword FROM commodity) as t1 " \
         "WHERE item.item_url_md5 NOT IN (" \
         "  SELECT item_url_md5 " \
         "  FROM item " \
-        "  WHERE data_end_time > %f) " \
+        "  WHERE data_end_time < %f) " \
         "AND item.item_url_md5 = t1.item_url_md5 AND t1.keyword='%s' " \
         "ORDER BY access_num DESC, sales_amount DESC;"  # 所给日期后均未更新且关键字为%s的商品
     __sql_delete_commodity = \
@@ -984,11 +988,12 @@ class LinkAdministrator:
 
 class DetailThread(threading.Thread):
     __keyword = None
-    __round_begin_time = None
+    __round_begin_time = None  # 访问在此时间前的商品
     __round_max_end_time = None  # 最久可接受的结束时间，可能因为处理完/中断而提前结束线程
     __max_duration = 20*60  # 该窗口最多开20分钟
     __max_wait_time = 20  # 网页加载最大等待时间
     __runnable_flag = True  # 决定是否继续运行
+    __max_interval_time = 60*60*24*7  # 最大能接受两次访问间隔，大于则说明已降权，将该商品记录删除
 
     def __init__(self, round_begin_time: time, keyword: str, group=None,
                  target=None, name=None, args=(), kwargs=None, *, daemon=None) -> None:
@@ -1022,12 +1027,13 @@ class DetailThread(threading.Thread):
                     # 因意外打断，此次更新到此为止，不删除未更新的数据
                     return
                 counter += 1
-        # 删除counter及以后的商品记录
+        # 删除counter及以后长时间未再记录的商品记录
         item_list = item_list[counter:]
         md5_list = []
         for it in item_list:
-            md5_list.append(it[1])
-        # TODO:未访问达到一定天数就删除
+            # 未访问达到一定天数就删除
+            if time.time() - it[4] > self.__max_interval_time:
+                md5_list.append(it[1])
         helper.delete_commodities(md5_list)
 
     def stop(self):

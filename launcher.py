@@ -1,6 +1,5 @@
 import sys
 import time
-import json
 import smtplib
 import hashlib
 import threading
@@ -30,6 +29,11 @@ from selenium.webdriver.remote.webelement import WebElement
 
 
 class Launcher:
+    CODE_NORMAL = 0
+    CODE_ABNORMAL = -1
+    CODE_JD = 0x01  # use in database table last_running_state.
+    CODE_TMall = 0x10
+
     __jd_max_turn_page_amount = 20  # 对于某个关键字最大翻页次数
     __jd_max_wait_time = 20  # 网页加载最大等待时间
     __jd_no_result_str = "没有找到"  # 无结果页面关键字
@@ -62,17 +66,9 @@ class Launcher:
                 self.anti_detected_initial(chrome)
                 # 1.根据搜索列表不断更新价格信息或是新增商品
                 keyword_list = self.get_commodity_type_list()
+                # TODO:实现断点恢复
                 # 访问京东
-                try:
-                    self.access_jd(chrome, keyword_list)
-                except (TimeoutException, StaleElementReferenceException):
-                    logging.error("[Launcher.launch_spider()]:JD Result page haven't appear or stable although refresh!"
-                                  + (traceback.print_exc() or "None"))
-                    # 依然失败，需要介入
-                    link = LinkAdministrator()
-                    link.send_message("[EC-Spider shut down]", "[Launcher.access_jd()]:JD Result page haven't "
-                                      "appear although refresh!" + (traceback.print_exc() or "None"))
-                    break
+                self.access_jd(chrome, keyword_list)
                 # 访问淘宝
                 # self.access_taobao(chrome, keyword_list)
                 # 3.若此轮执行耗时超过预计时间，进行商品的删除操作。删除依据为（销量，近期访问次数）
@@ -80,7 +76,9 @@ class Launcher:
             # 等待一轮结束
             for thr in self.__thread_pool:
                 thr.join()
-            # 记录爬虫总使用时间
+            # 正常结束，记录状态
+            self.__helper.insert_running_state(self.CODE_NORMAL, self.__round_begin_time, time.time())
+            # 输出运行记录
             self.output_spider_state()
             if not auto_mode:
                 break
@@ -202,7 +200,14 @@ class Launcher:
                     wdw.until(CEC.ResultAllAppear(), "Wait all result failed.")
                 except TimeoutException:
                     browser.refresh()
-                    wdw.until(CEC.ResultAllAppear(), "Wait all result failed.")
+                    time.sleep(60)  # 等待60秒看是否有效
+                    try:
+                        wdw.until(CEC.ResultAllAppear(), "Wait all result failed.")
+                    except TimeoutException:
+                        # 记录断点，重启继续
+                        self.__helper.insert_running_state(
+                            self.CODE_ABNORMAL, self.__round_begin_time, time.time(), self.CODE_JD, kw)
+                        return
                 # 读取价格信息并更新
                 try:
                     self.__helper.insert_commodities(jlpr.read_commodities(browser, kw))
@@ -740,6 +745,15 @@ class DatabaseHelper:
     __sql_insert_keyword = \
         "INSERT INTO keyword(keyword,update_time) " \
         "VALUES('%s',%f);"
+    __sql_insert_running_state = \
+        "INSERT INTO last_running_state(state_code,begin_date,stop_date,ec_code,keyword) " \
+        "VALUES(%d,%f,%f,%d,'%s');"
+    __sql_query_running_state = \
+        "SELECT state_code,begin_date,stop_date,ec_code,keyword " \
+        "FROM last_running_state;"
+    __sql_delete_running_state = \
+        "DELETE FROM last_running_state;"
+
     __connection = None
 
     def __init__(self):
@@ -758,14 +772,25 @@ class DatabaseHelper:
         """
         if self.__connection is None:
             # Tips:从外部文件读入用户名/密码/数据库名
+            usr = pwd = db = ''
             with open("mysql.txt", encoding='UTF-8') as opt:
                 usr = opt.readline().strip()  # first line: username
                 pwd = opt.readline().strip()  # second line: password
                 db = opt.readline().strip()  # third line: database name
-                self.__connection = pymysql.connect(
-                    user=usr, password=pwd, charset='utf8',
-                    database=db, use_unicode=True
-                )
+            self.__connection = pymysql.connect(
+                user=usr, password=pwd, charset='utf8', use_unicode=True
+            )
+            with self.__connection.cursor() as cursor:
+                try:
+                    cursor.execute("USE %s;" % db)
+                except pymysql.err.InternalError:
+                    logging.warning(traceback.print_exc())
+                    # 可能未创建数据库
+                    with open("database/database.sql", encoding='UTF-8') as db_file:
+                        cmds = db_file.read().strip('\n|;').split(';')
+                        for cmd in cmds:
+                            cursor.execute(cmd+';')
+                    cursor.execute("USE %s;" % db)
         # 防止之前关闭，重新连接
         self.__connection.ping(True)
         return self.__connection
@@ -959,6 +984,18 @@ class DatabaseHelper:
             except pymysql.err.IntegrityError:
                 pass
 
+    def insert_running_state(self, state_code: int, begin_date: float, stop_date: float
+                             , ec_code: int = 0, keyword: str = None):
+        with self.__connection.cursor() as cursor:
+            cursor.execute(self.__sql_delete_running_state)
+            cursor.execute(self.__sql_insert_running_state % (state_code, begin_date, stop_date, ec_code, keyword))
+            self.__connection.commit()
+
+    def get_running_state(self) -> tuple:
+        with self.__connection.cursor() as cursor:
+            cursor.execute(self.__sql_query_running_state)
+            return cursor.fetchall()
+
 
 class LinkAdministrator:
     __host = 'smtp.qq.com'
@@ -1044,8 +1081,9 @@ if __name__ == '__main__':
     laun = Launcher()
     laun.add_keyword()
     try:
-        laun.launch_spider()
+        help = DatabaseHelper()
     except Exception:
+        traceback.print_exc()
         LinkAdministrator().send_message("EC-Spider shut down", (traceback.print_exc() or 'None'))
     print('Finished.')
 

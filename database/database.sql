@@ -1,8 +1,14 @@
--- 一件商品 --
-DROP DATABASE ec_spider;
 CREATE DATABASE ec_spider;
 
-use ec_spider;
+USE ec_spider;
+
+CREATE TABLE last_running_state(
+    state_code INT NOT NULL,  -- code==0 means normal, code==-1 means abnormal. --
+    begin_date DOUBLE NOT NULL,
+    stop_date DOUBLE NOT NULL,
+    ec_code INT, -- code==0x01 means JD, code==0x10 means TMall --
+    keyword varchar(250)
+) default charset =  utf8;
 
 CREATE TABLE keyword(
 	keyword VARCHAR(250) PRIMARY KEY, -- 搜索关键词 --
@@ -47,12 +53,3 @@ CREATE TABLE Item(
     FOREIGN KEY(item_url_md5) REFERENCES commodity(item_url_md5),
 	PRIMARY KEY(item_url_md5 ASC, data_begin_time DESC) -- 默认按时间降序排列 --
 ) default charset = utf8;
-
-
-
-
-
-
-
-
-

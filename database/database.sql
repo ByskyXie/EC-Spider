@@ -6,7 +6,7 @@ CREATE TABLE last_running_state(
     state_code INT NOT NULL,  -- code==0 means normal, code==-1 means abnormal. --
     begin_date DOUBLE NOT NULL,
     stop_date DOUBLE NOT NULL,
-    ec_code INT, -- code==0x01 means JD, code==0x10 means TMall --
+    ec_code INT, -- code==1 means JD, code==2 means TMall --
     keyword varchar(250)
 ) default charset =  utf8;
 

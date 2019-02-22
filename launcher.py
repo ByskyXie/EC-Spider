@@ -31,8 +31,8 @@ from selenium.webdriver.remote.webelement import WebElement
 class Launcher:
     CODE_NORMAL = 0
     CODE_ABNORMAL = -1
-    CODE_JD = 0x01  # use in database table last_running_state.
-    CODE_TMall = 0x10
+    CODE_JD = 1  # use in database table last_running_state.
+    CODE_TMall = 2
 
     __jd_max_turn_page_amount = 20  # 对于某个关键字最大翻页次数
     __jd_max_wait_time = 20  # 网页加载最大等待时间
@@ -43,6 +43,7 @@ class Launcher:
     __tb_max_duration = __round_max_duration * 0
 
     __thread_pool = []  # 线程池
+    __pre_state = None
     __helper = None
 
     def __init__(self) -> None:
@@ -66,11 +67,14 @@ class Launcher:
                 self.anti_detected_initial(chrome)
                 # 1.根据搜索列表不断更新价格信息或是新增商品
                 keyword_list = self.get_commodity_type_list()
-                # TODO:实现断点恢复
+                # TODO:由于访问顺序按照CODE从小到大，据此实现断点恢复
+                self.__pre_state = self.__helper.get_running_state()
                 # 访问京东
-                self.access_jd(chrome, keyword_list)
+                if self.__pre_state[3] <= self.CODE_JD:
+                    self.access_jd(chrome, keyword_list)
                 # 访问淘宝
-                # self.access_taobao(chrome, keyword_list)
+                # if self.__pre_state[3] <= self.CODE_TMall:
+                #     self.access_taobao(chrome, keyword_list)
                 # 3.若此轮执行耗时超过预计时间，进行商品的删除操作。删除依据为（销量，近期访问次数）
                 # 4.检查是否满足清除次数的条件，为真则利用SQL语句集体清空
             # 等待一轮结束
@@ -149,6 +153,12 @@ class Launcher:
             ), "Input views not appear")
         except TimeoutException:
             logging.warning("Haven't got every views!" + (traceback.print_exc() or 'None'))
+        # 若之前状态码为CODE_ABNORMAL，且EC_CODE == CODE_JD 则跳过之前的kw
+        if self.__pre_state[0] == self.CODE_ABNORMAL and self.__pre_state[3] == self.CODE_JD:
+            for kw in kw_list:
+                if kw.strip() == self.__pre_state[4].strip():
+                    break
+                position += 1
         for kw in kw_list:
             position += 1  # 当前kw位置
             page_num = 1
@@ -994,7 +1004,11 @@ class DatabaseHelper:
     def get_running_state(self) -> tuple:
         with self.__connection.cursor() as cursor:
             cursor.execute(self.__sql_query_running_state)
-            return cursor.fetchall()
+            tup = cursor.fetchall()
+            if len(tup) == 0:
+                # 无记录
+                tup = (0, 0, 0, 0, None)
+            return tup
 
 
 class LinkAdministrator:
@@ -1081,7 +1095,7 @@ if __name__ == '__main__':
     laun = Launcher()
     laun.add_keyword()
     try:
-        help = DatabaseHelper()
+        laun.launch_spider(False)
     except Exception:
         traceback.print_exc()
         LinkAdministrator().send_message("EC-Spider shut down", (traceback.print_exc() or 'None'))

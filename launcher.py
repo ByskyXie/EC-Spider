@@ -71,10 +71,14 @@ class Launcher:
                 self.__pre_state = self.__helper.get_running_state()
                 # 访问京东
                 if self.__pre_state[3] <= self.CODE_JD:
-                    self.access_jd(chrome, keyword_list)
+                    if self.access_jd(chrome, keyword_list) == -1:
+                        # 说明发生断点事件
+                        break
                 # 访问淘宝
                 # if self.__pre_state[3] <= self.CODE_TMall:
-                #     self.access_taobao(chrome, keyword_list)
+                #     if self.access_taobao(chrome, keyword_list) == -1:
+                #         # 说明发生断点事件
+                #         break
                 # 3.若此轮执行耗时超过预计时间，进行商品的删除操作。删除依据为（销量，近期访问次数）
                 # 4.检查是否满足清除次数的条件，为真则利用SQL语句集体清空
             # 等待一轮结束
@@ -138,6 +142,7 @@ class Launcher:
             print('Get button failed')
         else:
             button.click()
+        return 0
 
     def access_jd(self, browser: selenium.webdriver.Chrome, kw_list: list):
         # 京东
@@ -179,63 +184,65 @@ class Launcher:
                 logging.error("Launcher.access_jd() :Button can't click.")
                 continue
             while page_num <= self.__jd_max_turn_page_amount:
-                if self.__jd_max_duration * position / len(kw_list) < (time.time() - jd_begin_time):
-                    # 控制进度。说明该kw超时了，以后的页面不再读取
-                    logging.info('[Single keyword running timeout]:' + kw + ' page:' + page_num)
-                    break
-                try:
-                    wdw.until(CEC.PageViewsAppear(
-                        [(By.XPATH, jlpr.jd_list_page_goods_list_xpath),
-                         (By.XPATH, jlpr.jd_list_page_turn_xpath)]
-                    ), "Search result not appear")
-                except TimeoutException:
-                    browser.refresh()  # 刷新重试一遍
-                    wdw.until(CEC.PageViewsAppear(
-                        [(By.XPATH, jlpr.jd_list_page_goods_list_xpath),
-                         (By.XPATH, jlpr.jd_list_page_turn_xpath)]
-                    ), "Search result not appear")
-                try:
-                    temp = browser.find_element(By.XPATH, '//div[@class=\'notice-search\']')
-                    if temp is not None and self.__jd_no_result_str in temp.text:
-                        # 出现"抱歉，没有找到与“***”相关的商品"
-                        logging.warning("JD没有找到与[" + kw + "]相关的商品", browser.current_url)
+                try:  # 最外层的try except 用于捕获断点
+
+                    if self.__jd_max_duration * position / len(kw_list) < (time.time() - jd_begin_time):
+                        # 控制进度。说明该kw超时了，以后的页面不再读取
+                        logging.info('[Single keyword running timeout]:' + kw + ' page:' + page_num)
                         break
-                except NoSuchElementException:
-                    # 找不到元素正常，说明该关键字有结果
-                    pass
-                # 跳转到页面最底部
-                browser.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                # 等待60条记录全出现后再读取
-                try:
-                    wdw.until(CEC.ResultAllAppear(), "Wait all result failed.")
-                except TimeoutException:
-                    browser.refresh()
-                    time.sleep(60)  # 等待60秒看是否有效
+                    try:
+                        wdw.until(CEC.PageViewsAppear(
+                            [(By.XPATH, jlpr.jd_list_page_goods_list_xpath),
+                             (By.XPATH, jlpr.jd_list_page_turn_xpath)]
+                        ), "Search result not appear")
+                    except TimeoutException:
+                        browser.refresh()  # 刷新重试一遍
+                        wdw.until(CEC.PageViewsAppear(
+                            [(By.XPATH, jlpr.jd_list_page_goods_list_xpath),
+                             (By.XPATH, jlpr.jd_list_page_turn_xpath)]
+                        ), "Search result not appear")
+                    try:
+                        temp = browser.find_element(By.XPATH, '//div[@class=\'notice-search\']')
+                        if temp is not None and self.__jd_no_result_str in temp.text:
+                            # 出现"抱歉，没有找到与“***”相关的商品"
+                            logging.warning("JD没有找到与[" + kw + "]相关的商品", browser.current_url)
+                            break
+                    except NoSuchElementException:
+                        # 找不到元素正常，说明该关键字有结果
+                        pass
+                    # 跳转到页面最底部
+                    browser.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+                    # 等待60条记录全出现后再读取
                     try:
                         wdw.until(CEC.ResultAllAppear(), "Wait all result failed.")
                     except TimeoutException:
-                        # 记录断点，重启继续
-                        self.__helper.insert_running_state(
-                            self.CODE_ABNORMAL, self.__round_begin_time, time.time(), self.CODE_JD, kw)
-                        return
-                # 读取价格信息并更新
-                try:
-                    self.__helper.insert_commodities(jlpr.read_commodities(browser, kw))
-                    self.__helper.insert_items(jlpr.read_items(browser))
-                except StaleElementReferenceException:
-                    browser.refresh()
-                    logging.warning("Launcher.access_jd(): Not stable." + (traceback.print_exc() or "None"))
-                    # 重试一次
-                    self.__helper.insert_commodities(jlpr.read_commodities(browser, kw))
-                    self.__helper.insert_items(jlpr.read_items(browser))
-                # 翻页，页码+1
-                browser.find_element(By.XPATH, '/*').send_keys(Keys.RIGHT)
-                page_num += 1
+                        browser.refresh()
+                        time.sleep(60)  # 等待60秒看是否有效
+                        wdw.until(CEC.ResultAllAppear(), "Wait all result failed.")
+                    # 读取价格信息并更新
+                    try:
+                        self.__helper.insert_commodities(jlpr.read_commodities(browser, kw))
+                        self.__helper.insert_items(jlpr.read_items(browser))
+                    except StaleElementReferenceException:
+                        browser.refresh()
+                        logging.warning("Launcher.access_jd(): Not stable." + (traceback.print_exc() or "None"))
+                        # 重试一次
+                        self.__helper.insert_commodities(jlpr.read_commodities(browser, kw))
+                        self.__helper.insert_items(jlpr.read_items(browser))
+                    # 翻页，页码+1
+                    browser.find_element(By.XPATH, '/*').send_keys(Keys.RIGHT)
+                    page_num += 1
+                except TimeoutException:
+                    # 记录断点，重启继续
+                    self.__helper.insert_running_state(
+                        self.CODE_ABNORMAL, self.__round_begin_time, time.time(), self.CODE_JD, kw)
+                    return -1
             # 2.针对未更新但已有记录的商品，也更新
             # 一个关键字已完毕，针对已记录且未在当日搜索结果的商品，另起线程处理该情况
             dt = DetailThread(self.__round_begin_time, kw)
             dt.start()
             self.__thread_pool.append(dt)
+        return 0
 
     def get_time_spent_percent(self) -> float:
         return (time.time() - self.__round_begin_time)/self.__round_max_duration

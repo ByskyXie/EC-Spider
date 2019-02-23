@@ -2,8 +2,9 @@
   "name": "EC Spider",
   "version": "0.5",
   "description": "展示京东淘宝等商品历史价格",
-  "browser_action": {
+  "page_action": {
     "default_icon": "icon.png",
+    "default_title": "EC-spider",
     "default_popup": "popup.html"
   },
   "permissions": ["https://*.jd.com/","https://*.tmall.com/","https://*.taobao.com/"],

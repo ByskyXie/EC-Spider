@@ -144,7 +144,7 @@ class Launcher:
             button.click()
         return 0
 
-    def access_jd(self, browser: selenium.webdriver.Chrome, kw_list: list):
+    def access_jd(self, browser: selenium.webdriver.Chrome, kw_list: list) -> int:
         # 京东
         position = 0
         jd_begin_time = time.time()
@@ -188,7 +188,7 @@ class Launcher:
 
                     if self.__jd_max_duration * position / len(kw_list) < (time.time() - jd_begin_time):
                         # 控制进度。说明该kw超时了，以后的页面不再读取
-                        logging.info('[Single keyword running timeout]:' + kw + ' page:' + page_num)
+                        logging.info('[Single keyword running timeout]:' + kw + ' page:' + str(page_num))
                         break
                     try:
                         wdw.until(CEC.PageViewsAppear(
@@ -1011,7 +1011,7 @@ class DatabaseHelper:
     def get_running_state(self) -> tuple:
         with self.__connection.cursor() as cursor:
             cursor.execute(self.__sql_query_running_state)
-            tup = cursor.fetchall()
+            tup = cursor.fetchone()
             if len(tup) == 0:
                 # 无记录
                 tup = (0, 0, 0, 0, None)

@@ -7,25 +7,26 @@ import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
+import classes.DBHelper;
+
 /**
  * Servlet implementation class PopupServlet
  */
-@WebServlet("/PopupServlet")
+
+@WebServlet(urlPatterns="/popup")
 public class PopupServlet extends HttpServlet {
+	private final DBHelper helper = new DBHelper();
 	private static final long serialVersionUID = 1L;
 
-    /**
-     * Default constructor. 
-     */
     public PopupServlet() {
-        // TODO Auto-generated constructor stub
+
     }
 
 	/**
 	 * @see HttpServlet#doGet(HttpServletRequest request, HttpServletResponse response)
 	 */
 	protected void doGet(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
-		// TODO Auto-generated method stub
+
 		response.getWriter().append("Served at: ").append(request.getContextPath());
 	}
 
@@ -33,8 +34,13 @@ public class PopupServlet extends HttpServlet {
 	 * @see HttpServlet#doPost(HttpServletRequest request, HttpServletResponse response)
 	 */
 	protected void doPost(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
-		// TODO Auto-generated method stub
+		
 		doGet(request, response);
+	}
+
+	public void destroy() {
+		super.destroy();
+		helper.close();
 	}
 
 }

@@ -45,7 +45,7 @@ public class PopupServlet extends HttpServlet {
 			pw.append("");  //TODO:ÏÔÊ¾´íÎó
 			return;
 		}
-		pw.append("Served at: ");
+		pw.append("Served at EC spider.");
 		pw.close();
 	}
 

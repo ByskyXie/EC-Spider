@@ -7,37 +7,38 @@
     <style>::-webkit-scrollbar{display:none;}html,body{overflow:hidden;height:100%;margin:0;}</style>
 </head>
 <body>
-<div id="mountNode"></div>
+<div id="priceMap"></div>
 <script>/*Fixing iframe window.innerHeight 0 issue in Safari*/document.body.clientHeight;</script>
 <script src="https://gw.alipayobjects.com/os/antv/pkg/_antv.g2-3.4.1/dist/g2.min.js"></script>
 <script src="https://gw.alipayobjects.com/os/antv/pkg/_antv.data-set-0.10.1/dist/data-set.min.js"></script>
 <script>
   var data = [{
-	dat: 0505,
-	value: 20,
-      }, {
-	dat: 0701,
-	value: 40
-      }, {
-	  dat: 0101,
-	  value: 10
-	}, {
-	dat: 1101,
-	value: 88
-      }, {
-	dat: 1201,
-	value: 56
+    disp:'2018-01-01',
+    value: 41
+  },{
+    disp:'2018-10-01',
+    value: 77
+  }, {
+    disp:'2018-11-01',
+    value: 88
+  }, {
+    disp:'2018-12-01',
+    value: 56
   }];
-  var defs = {
-	dat:{range:[0,1],min:101,max:1231} 
-  }
   var chart = new G2.Chart({
-    container: 'mountNode',
+    container: 'priceMap',
     forceFit: true,
     height: window.innerHeight
   });
+  var defs = {
+    disp: {
+    	alias:'日期',
+        type:'time',
+        tickCount:20
+      }
+    };
   chart.source(data, defs);
-  chart.line().position('dat*value').shape('hv');
+  chart.line().position('disp*value').shape('hv');
   chart.render();
 </script>
 </body>

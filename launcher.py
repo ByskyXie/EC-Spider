@@ -233,6 +233,7 @@ class Launcher:
                     browser.find_element(By.XPATH, '/*').send_keys(Keys.RIGHT)
                     page_num += 1
                 except TimeoutException:
+                    logging.error("Access error\n" + (traceback.print_exc() or 'None'))
                     # 记录断点，重启继续
                     self.__helper.insert_running_state(
                         self.CODE_ABNORMAL, self.__round_begin_time, time.time(), self.CODE_JD, kw)

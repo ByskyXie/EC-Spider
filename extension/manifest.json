@@ -7,6 +7,7 @@
     "default_title": "EC-spider",
     "default_popup": "popup.html"
   },
-  "permissions": ["https://*.jd.com/","https://*.tmall.com/","https://*.taobao.com/"],
+  "background": { "scripts": ["background.js"] },
+  "permissions": ["tabs","https://*.jd.com/","https://*.tmall.com/","https://*.taobao.com/"],
   "manifest_version": 2
 }

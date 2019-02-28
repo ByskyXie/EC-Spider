@@ -13,6 +13,9 @@ function checkWeatherShow(tabId, changeInfo, tab){
     host = getDomainFromUrl(tab.url).toLowerCase();
     if(host == "www.jd.com" || host == "www.taobao.com" || host == "www.tmall.com"){
         chrome.pageAction.show(tabId);
+//        添加
+        var value = $.get('http://localhost:8080/server/popup');
+        document.getElementById('display').innerText = value;
     }
 }
 

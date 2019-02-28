@@ -38,13 +38,13 @@ public class PopupServlet extends HttpServlet {
 	protected void doGet(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
 		PrintWriter pw = response.getWriter();
 		String urlMD5 = request.getParameter("md5");
-		try {
-			ResultSet rs = helper.execute(String.format(SQL_QUERY, urlMD5));
-		} catch (SQLException e) {
-			e.printStackTrace();
-			pw.append("");  //TODO:œ‘ æ¥ÌŒÛ
-			return;
-		}
+//		try {
+//			ResultSet rs = helper.execute(String.format(SQL_QUERY, urlMD5));
+//		} catch (SQLException e) {
+//			e.printStackTrace();
+//			pw.append("");  //TODO:œ‘ æ¥ÌŒÛ
+//			return;
+//		}
 		pw.append("Served at EC spider.");
 		pw.close();
 	}

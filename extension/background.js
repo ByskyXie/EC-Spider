@@ -13,10 +13,15 @@ function checkWeatherShow(tabId, changeInfo, tab){
     host = getDomainFromUrl(tab.url).toLowerCase();
     if(host == "www.jd.com" || host == "www.taobao.com" || host == "www.tmall.com"){
         chrome.pageAction.show(tabId);
-//        添加
-        var value = $.get('http://localhost:8080/server/popup?item_url='+tab.url);
-        document.getElementById('display').innerText = value;
     }
+}
+
+function getServerPage(){
+//  获取页面
+    var value = $.get('http://localhost:8080/server/popup?item_url=' + tab.url);
+//  更改popup信息
+    var views = chrome.extension.getViews({type:"popup"});
+    console.log(views[0].getDisplayElement(233));
 }
 
 chrome.tabs.onUpdated.addListener(checkWeatherShow);

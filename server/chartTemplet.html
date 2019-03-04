@@ -12,19 +12,16 @@
 <script src="https://gw.alipayobjects.com/os/antv/pkg/_antv.g2-3.4.1/dist/g2.min.js"></script>
 <script src="https://gw.alipayobjects.com/os/antv/pkg/_antv.data-set-0.10.1/dist/data-set.min.js"></script>
 <script>
-  var data = [{
+  var data = [
+	%s  
+  /* {
     disp:'2018-01-01',
     value: 41
   },{
     disp:'2018-10-01',
     value: 77
-  }, {
-    disp:'2018-11-01',
-    value: 88
-  }, {
-    disp:'2018-12-01',
-    value: 56
-  }];
+  } */
+  ];
   var chart = new G2.Chart({
     container: 'priceMap',
     forceFit: true,
@@ -34,7 +31,7 @@
     disp: {
     	alias:'日期',
         type:'time',
-        tickCount:20
+        tickCount:10
       }
     };
   chart.source(data, defs);

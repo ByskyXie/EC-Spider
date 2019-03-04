@@ -4,4 +4,4 @@ function setDisplayText(txt){
 
 var bg = chrome.extension.getBackgroundPage();
 console.log(bg.getServerPage);
-
+setDisplayText(bg.toString());

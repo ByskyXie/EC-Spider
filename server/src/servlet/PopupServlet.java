@@ -39,13 +39,14 @@ public class PopupServlet extends HttpServlet {
 		PrintWriter pw = response.getWriter();
 		String itemUrl = request.getParameter("item_url");
 		System.out.println("GET url="+itemUrl);
-//		try {
-//			ResultSet rs = helper.execute(String.format(SQL_QUERY, urlMD5));
-//		} catch (SQLException e) {
-//			e.printStackTrace();
-//			pw.append("");  //TODO:œ‘ æ¥ÌŒÛ
-//			return;
-//		}
+		try {
+			ResultSet rs = helper.execute(String.format(SQL_QUERY, itemUrl));
+			pw.append(produceChart(rs));
+		} catch (SQLException e) {
+			e.printStackTrace();
+			pw.append("");  //TODO:œ‘ æ¥ÌŒÛ
+			return;
+		}
 		pw.append("Served at EC spider");
 		pw.close();
 	}
@@ -61,6 +62,13 @@ public class PopupServlet extends HttpServlet {
 	public void destroy() {
 		super.destroy();
 		helper.close();
+	}
+	
+	private String produceChart(ResultSet rs) {
+		String script = "";
+		//TODO:produce chart
+		
+		return script;
 	}
 
 }

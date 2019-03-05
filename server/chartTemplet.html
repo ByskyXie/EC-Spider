@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width,height=device-height">
-    <title>%s</title>
+    <title>Price history</title>
     <style>::-webkit-scrollbar{display:none;}html,body{overflow:hidden;height:100%;margin:0;}</style>
 </head>
 <body>
@@ -13,14 +13,7 @@
 <script src="https://gw.alipayobjects.com/os/antv/pkg/_antv.data-set-0.10.1/dist/data-set.min.js"></script>
 <script>
   var data = [
-	%s  
-  /* {
-    disp:'2018-01-01',
-    value: 41
-  },{
-    disp:'2018-10-01',
-    value: 77
-  } */
+	%s
   ];
   var chart = new G2.Chart({
     container: 'priceMap',
@@ -29,9 +22,10 @@
   });
   var defs = {
     disp: {
-    	alias:'日期',
+    	alias:'Time',
         type:'time',
-        tickCount:10
+        tickCount:10,
+        range:[0,0.94]
       }
     };
   chart.source(data, defs);

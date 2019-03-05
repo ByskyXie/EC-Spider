@@ -58,7 +58,6 @@ public class DBHelper {
 	public ResultSet execute(String sql) throws SQLException {
 		pst = conn.prepareStatement(sql);
 		ResultSet rs = pst.executeQuery();
-		pst.close();
 		return rs;
 	}
 	

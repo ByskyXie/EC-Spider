@@ -30,11 +30,11 @@ public class PopupServlet extends HttpServlet {
 	private final DBHelper helper = new DBHelper();
 	private static final SimpleDateFormat SDF = new SimpleDateFormat("yyyy-MM-dd");
 	private static final long serialVersionUID = 1L;
-	private static final int point = 365/2;  //默认显示历史价格区间
+	private static final int LIMITSECOND = 365/2*24*60*60;  //默认显示历史价格区间
 	private static final String SQL_QUERY = 
 			"SELECT data_begin_time,item_price "
 			+ "FROM item "
-			+ "WHERE item_url_md5='%s' "
+			+ "WHERE item_url_md5='%s' AND data_begin_time>%f "
 			+ "ORDER BY data_begin_time ASC;";
 
 	
@@ -49,7 +49,9 @@ public class PopupServlet extends HttpServlet {
 		PrintWriter pw = response.getWriter();
 		String itemUrl = request.getParameter("item_url");
 		try {
-			ResultSet rs = helper.execute(String.format(SQL_QUERY, getMD5(itemUrl)));
+			ResultSet rs = helper.execute(String.format(SQL_QUERY, 
+					getMD5(itemUrl), new Date().getTime() - LIMITSECOND));
+			//调取半年内的数据
 			pw.append(produceChart(rs));
 			rs.close();
 		} catch (SQLException e) {

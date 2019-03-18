@@ -15,7 +15,6 @@ from email.header import Header
 from email.mime.text import MIMEText
 import custom_expected_conditions as CEC
 from selenium import webdriver
-from typing import Optional, Callable, Any, Iterable, Mapping
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.action_chains import *
@@ -160,11 +159,13 @@ class Launcher:
             logging.warning("Haven't got every views!" + (traceback.print_exc() or 'None'))
         # 若之前状态码为CODE_ABNORMAL，且EC_CODE == CODE_JD 则跳过之前的kw
         if self.__pre_state[0] == self.CODE_ABNORMAL and self.__pre_state[3] == self.CODE_JD:
+            position = 0
             for kw in kw_list:
                 if kw.strip() == self.__pre_state[4].strip():
                     break
                 position += 1
-        for kw in kw_list:
+        while(position < len(kw_list)):
+            kw = kw_list[position]
             position += 1  # 当前kw位置
             page_num = 1
             input_view = browser.find_element(By.ID, jlpr.jd_search_view_id)
@@ -172,11 +173,11 @@ class Launcher:
             input_view.send_keys(kw)
             button = browser.find_element(By.XPATH, jlpr.jd_search_button_xpath)
             browser.execute_script("""
-                if (navigator.webdriver) {
-                    navigator.webdrivser = false;
-                    delete navigator.webdrivser;
-                    Object.defineProperty(navigator, 'webdriver', {get: () => false,});//改为Headless=false
-                }""")  # TODO:检测无头模式，为真则做出修改
+                            if (navigator.webdriver) {
+                                navigator.webdrivser = false;
+                                delete navigator.webdrivser;
+                                Object.defineProperty(navigator, 'webdriver', {get: () => false,});//改为Headless=false
+                            }""")  # TODO:检测无头模式，为真则做出修改
             try:
                 button.click()
             except selenium.common.exceptions.WebDriverException:
@@ -233,7 +234,7 @@ class Launcher:
                     browser.find_element(By.XPATH, '/*').send_keys(Keys.RIGHT)
                     page_num += 1
                 except TimeoutException:
-                    logging.error("Access error\n" + (traceback.print_exc() or 'None'))
+                    logging.error("Access error:\n" + (traceback.print_exc() or 'Exception None'))
                     # 记录断点，重启继续
                     self.__helper.insert_running_state(
                         self.CODE_ABNORMAL, self.__round_begin_time, time.time(), self.CODE_JD, kw)
@@ -1107,7 +1108,6 @@ if __name__ == '__main__':
     except Exception:
         traceback.print_exc()
         LinkAdministrator().send_message("EC-Spider shut down", (traceback.print_exc() or 'None'))
-    print('Finished.')
 
 # https://item.jd.com/8735304.html#none
 # http://item.jd.com/20742438990.html # 只有商品颜色选择

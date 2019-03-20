@@ -1,3 +1,4 @@
+
 function getDomainFromUrl(url){
     var host = "null";
     if(typeof url == "undefined" || url == null)
@@ -11,17 +12,17 @@ function getDomainFromUrl(url){
 
 function checkWeatherShow(tabId, changeInfo, tab){
     host = getDomainFromUrl(tab.url).toLowerCase();
-    if(host == "www.jd.com" || host == "www.taobao.com" || host == "www.tmall.com"){
+    if(host == "item.jd.com"  || host == "www.taobao.com" || host == "www.tmall.com"){
         chrome.pageAction.show(tabId);
     }
 }
 
 function getServerPage(){
+    var views = chrome.extension.getViews({type:"popup","tab"});
 //  获取页面
-    var value = $.get('http://localhost:8080/server/popup?item_url=' + tab.url);
+    var value = $.get('http://localhost:8080/server/popup?item_url=' + views[2].document.URL);
 //  更改popup信息
-    var views = chrome.extension.getViews({type:"popup"});
-    console.log(views[0].getDisplayElement(233));
+    views[0].document.location = value;
 }
 
 chrome.tabs.onUpdated.addListener(checkWeatherShow);

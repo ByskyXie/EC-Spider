@@ -46,14 +46,36 @@ public class PopupServlet extends HttpServlet {
 	 * @see HttpServlet#doGet(HttpServletRequest request, HttpServletResponse response)
 	 */
 	protected void doGet(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
+//		response.setContentType("application/text; charset=utf-8"); //download mode
 		PrintWriter pw = response.getWriter();
-		String itemUrl = request.getParameter("item_url");
+		response.setHeader("Access-Control-Allow-Origin","*");//跨域访问
+		String itemUrl = request.getParameter("item_url");//直接访问用
+		String json = request.getParameter("json");//插件用
+		System.out.println("++++++++++++++++++++++++++Get request:"+json);
 		try {
-			ResultSet rs = helper.execute(String.format(SQL_QUERY, 
-					getMD5(itemUrl), new Date().getTime() - LIMITSECOND));
-			//调取半年内的数据
-			pw.append(produceChart(rs));
-			rs.close();
+			ResultSet rs = null;
+			if(itemUrl != null && itemUrl.length()!=0) {
+				rs = helper.execute(String.format(SQL_QUERY, 
+						getMD5(itemUrl), (double)(new Date().getTime()/1000 - LIMITSECOND)));
+				//调取半年内的数据
+				pw.append(produceChart(rs));
+				rs.close();
+			}else if(json!=null && json.length()!=0){
+				rs = helper.execute(String.format(SQL_QUERY, 
+						getMD5(json), (double)(new Date().getTime()/1000 - LIMITSECOND)));
+				//调取半年内的数据
+				rs.last();
+				int num = rs.getRow();
+				if(num != 0) {
+					pw.append("["+produceChartDataSequence(rs)+"]");
+				}else {
+					pw.append("Empty record.");
+				}
+				rs.close();
+			}else {
+				pw.append("Empty record.");
+			}
+				
 		} catch (SQLException e) {
 			e.printStackTrace();
 			pw.append("");  //TODO:显示错误
@@ -92,7 +114,7 @@ public class PopupServlet extends HttpServlet {
 						String data = produceChartDataSequence(rs);
 						if(data.length() == 0) {
 							//record is null
-							return "Empty.";
+							return "The commodity haven't record.";
 						}
 						line = line.replace("%s", data);
 						break;
@@ -141,6 +163,8 @@ public class PopupServlet extends HttpServlet {
 		try {
 			StringBuilder sb = new StringBuilder();
 			MessageDigest md5 = MessageDigest.getInstance("MD5");
+			if(info == null || info.length() == 0)
+				return "empty";
 			md5.update(info.getBytes());
 			byte[] cons = md5.digest();
 			for (int i,offset = 0; offset < cons.length; offset++) {

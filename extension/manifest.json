@@ -2,7 +2,7 @@
   "name": "EC Spider",
   "version": "0.5",
   "description": "展示京东淘宝等商品历史价格",
-  "background": { "scripts": ["jquery-2.0.0.min.js","background.js","g2.min.js","data-set.min.js"] },
+  "background": { "scripts": ["jquery-2.0.0.min.js","background.js"] },
   "content_scripts": [{
     "matches":["https://*.jd.com/","https://*.tmall.com/","https://*.taobao.com/"],
     "js":["jquery-2.0.0.min.js","background.js"]} ],
@@ -12,6 +12,6 @@
     "default_popup": "popup.html"
   },
   "permissions": ["tabs","https://*.jd.com/","https://*.tmall.com/"
-    ,"https://*.taobao.com/","webRequest","http://*/"],
+    ,"https://*.taobao.com/","webRequest"],
   "manifest_version": 2
 }

@@ -38,7 +38,7 @@ class Launcher:
     __jd_no_result_str = "没有找到"  # 无结果页面关键字
     __round_begin_time = time.time()  # 一轮爬虫开始时间
     __round_max_duration = 24*60*60  # 一轮最大可接受时间
-    __jd_max_duration = __round_max_duration * 1  # 京东分配到的时间
+    __jd_max_duration = __round_max_duration * 1  # 京东的时间配额
     __tb_max_duration = __round_max_duration * 0
 
     __thread_pool = []  # 线程池
@@ -81,6 +81,7 @@ class Launcher:
                 # 3.若此轮执行耗时超过预计时间，进行商品的删除操作。删除依据为（销量，近期访问次数）
                 # 4.检查是否满足清除次数的条件，为真则利用SQL语句集体清空
             # 等待一轮结束
+            # TODO:另起线程删除太久以前的item记录、未使用的commodity记录
             for thr in self.__thread_pool:
                 thr.join()
             # 正常结束，记录状态
@@ -185,6 +186,7 @@ class Launcher:
                 logging.error("Launcher.access_jd() :Button can't click.")
                 continue
             while page_num <= self.__jd_max_turn_page_amount:
+                #TODO:根据已读取记录决定是否继续
                 try:  # 最外层的try except 用于捕获断点
 
                     if self.__jd_max_duration * position / len(kw_list) < (time.time() - jd_begin_time):
@@ -218,7 +220,7 @@ class Launcher:
                         wdw.until(CEC.ResultAllAppear(), "Wait all result failed.")
                     except TimeoutException:
                         browser.refresh()
-                        time.sleep(60)  # 等待60秒看是否有效
+                        time.sleep(90)  # 等待90秒看是否有效(Or create new tab?)
                         wdw.until(CEC.ResultAllAppear(), "Wait all result failed.")
                     # 读取价格信息并更新
                     try:
@@ -267,6 +269,7 @@ class Launcher:
             output_file.writelines('[Max Allow Duration]:' + str(self.__round_max_duration))
 
     def add_keyword(self):
+        # TODO:考虑给关键词增加权重
         with open("keywords.txt", encoding='UTF-8') as kwf:
             while True:
                 kw = kwf.readline()
@@ -1105,6 +1108,7 @@ if __name__ == '__main__':
     laun.add_keyword()
     try:
         laun.launch_spider(False)
+    #     TODO:未联网时解决方法
     except Exception:
         traceback.print_exc()
         LinkAdministrator().send_message("EC-Spider shut down", (traceback.print_exc() or 'None'))

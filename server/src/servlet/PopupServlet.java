@@ -67,7 +67,7 @@ public class PopupServlet extends HttpServlet {
 				rs.last();
 				int num = rs.getRow();
 				if(num != 0) {
-					pw.append("["+produceChartDataSequence(rs)+"]");
+					pw.append(produceArrayDataSequence(rs).replace('\n', ' '));
 				}else {
 					pw.append("Empty record.");
 				}
@@ -146,10 +146,28 @@ public class PopupServlet extends HttpServlet {
 		//TODO:locate oldest time(half year?)
 		for(int i=1;i<=num;i++) {
 			rs.absolute(i);
-			con +=String.format( "{\r\n disp:'%s',\r\nvalue: %f\r\n}, "
+			con +=String.format( "{\n disp:'%s',\n value: %f\n}, "
 				,doubleToDate((long)(rs.getDouble(1)*1000)), rs.getDouble(2));
 		}
-		con +=String.format( "{\r\n disp:'%s',\r\nvalue: %f\r\n} "
+		con +=String.format( "{\n disp:'%s',\n value: %f\n} "
+			,SDF.format(new Date()), rs.getDouble(2));  //使用最近一次价格
+		return con;
+	}
+	
+	private String produceArrayDataSequence(ResultSet rs) throws SQLException {
+		String con = "";
+		rs.last();
+		int num = rs.getRow();
+		if(num == 0) {
+			return con;
+		}
+		//TODO:locate oldest time(half year?)
+		for(int i=1;i<=num;i++) {
+			rs.absolute(i);
+			con +=String.format( "{ \"disp\":\"%s\", \"value\": %f}| "
+				,doubleToDate((long)(rs.getDouble(1)*1000)), rs.getDouble(2));
+		}
+		con +=String.format( "{ \"disp\":\"%s\",\"value\": %f } "
 			,SDF.format(new Date()), rs.getDouble(2));  //使用最近一次价格
 		return con;
 	}

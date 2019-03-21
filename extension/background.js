@@ -18,7 +18,7 @@ function checkWeatherShow(tabId, changeInfo, tab){
 }
 
 function getServerPage(){
-    var views = chrome.extension.getViews({type:{"popup","tab"}});
+    var views = chrome.extension.getViews({type:["popup","tab"]});
 //  获取页面
     var value = $.get('http://localhost:8080/server/popup?item_url=' + views[2].document.URL);
 //  更改popup信息

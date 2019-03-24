@@ -169,6 +169,7 @@ class Launcher:
             kw = kw_list[position]
             position += 1  # 当前kw位置
             page_num = 1
+            # TODO:如果是中断关键字，从已记录page_position开始
             input_view = browser.find_element(By.ID, jlpr.jd_search_view_id)
             input_view.clear()
             input_view.send_keys(kw)
@@ -239,7 +240,7 @@ class Launcher:
                     logging.error("Access error:\n" + (traceback.print_exc() or 'Exception None'))
                     # 记录断点，重启继续
                     self.__helper.insert_running_state(
-                        self.CODE_ABNORMAL, self.__round_begin_time, time.time(), self.CODE_JD, kw)
+                        self.CODE_ABNORMAL, self.__round_begin_time, time.time(), self.CODE_JD, kw, page_num)
                     return -1
             # 2.针对未更新但已有记录的商品，也更新
             # 一个关键字已完毕，针对已记录且未在当日搜索结果的商品，另起线程处理该情况
@@ -269,13 +270,22 @@ class Launcher:
             output_file.writelines('[Max Allow Duration]:' + str(self.__round_max_duration))
 
     def add_keyword(self):
-        # TODO:考虑给关键词增加权重
         with open("keywords.txt", encoding='UTF-8') as kwf:
             while True:
-                kw = kwf.readline()
-                if len(kw) == 0:
+                line = kwf.readline()
+                if len(line) == 0:
                     break
-                self.__helper.insert_keyword(kw)
+                kw = line.split(' ')
+                self.__helper.insert_keyword(kw[1].strip(), int(kw[0]))
+
+    def refresh_keyword(self):
+        with open("keywords.txt", encoding='UTF-8') as kwf:
+            while True:
+                line = kwf.readline()
+                if len(line) == 0:
+                    break
+                kw = line.split(' ')
+                self.__helper.update_keyword(kw[1].strip(), int(kw[0]))
 
     def get_commodity_type_list(self) -> list:
         return self.__helper.get_keyword_list()
@@ -763,15 +773,19 @@ class DatabaseHelper:
         "DELETE FROM item " \
         "WHERE item_url_md5=%s;"
     __sql_get_keyword = \
-        "SELECT keyword FROM keyword;"
+        "SELECT keyword FROM keyword ORDER BY weight DESC;"
     __sql_insert_keyword = \
-        "INSERT INTO keyword(keyword,update_time) " \
-        "VALUES('%s',%f);"
+        "INSERT IGNORE INTO keyword(weight,keyword,update_time) " \
+        "VALUES(%d,'%s',%f);"
+    __sql_update_keyword = \
+        "UPDATE keyword " \
+        "SET weight=%d, update_time=%f " \
+        "WHERE keyword='%s';"
     __sql_insert_running_state = \
-        "INSERT INTO last_running_state(state_code,begin_date,stop_date,ec_code,keyword) " \
-        "VALUES(%d,%f,%f,%d,'%s');"
+        "INSERT INTO last_running_state(state_code,begin_date,stop_date,ec_code,keyword,page_position) " \
+        "VALUES(%d,%f,%f,%d,'%s',%d);"
     __sql_query_running_state = \
-        "SELECT state_code,begin_date,stop_date,ec_code,keyword " \
+        "SELECT state_code,begin_date,stop_date,ec_code,keyword,page_position " \
         "FROM last_running_state;"
     __sql_delete_running_state = \
         "DELETE FROM last_running_state;"
@@ -996,30 +1010,40 @@ class DatabaseHelper:
                 kw_list.append(i[0])
             return kw_list
 
-    def insert_keyword(self, value: str):
+    def insert_keyword(self, value: str, weight: int = 0):
         if type(value) != str:
             return
         with self.__connection.cursor() as cursor:
             try:
-                cursor.execute(self.__sql_insert_keyword % (value.strip(), time.time()))
+                cursor.execute(self.__sql_insert_keyword % (weight, value.strip(), time.time()))
+                self.__connection.commit()
+            except pymysql.err.IntegrityError:
+                pass
+
+    def update_keyword(self, value: str, weight: int = 0):
+        if type(value) != str:
+            return
+        with self.__connection.cursor() as cursor:
+            try:
+                cursor.execute(self.__sql_update_keyword % (weight, time.time(), value.strip()))
                 self.__connection.commit()
             except pymysql.err.IntegrityError:
                 pass
 
     def insert_running_state(self, state_code: int, begin_date: float, stop_date: float
-                             , ec_code: int = 0, keyword: str = None):
+                             , ec_code: int = 0, keyword: str = None, pos: int = 0):
         with self.__connection.cursor() as cursor:
             cursor.execute(self.__sql_delete_running_state)
-            cursor.execute(self.__sql_insert_running_state % (state_code, begin_date, stop_date, ec_code, keyword))
+            cursor.execute(self.__sql_insert_running_state % (state_code, begin_date, stop_date, ec_code, keyword, pos))
             self.__connection.commit()
 
     def get_running_state(self) -> tuple:
         with self.__connection.cursor() as cursor:
             cursor.execute(self.__sql_query_running_state)
             tup = cursor.fetchone()
-            if len(tup) == 0:
+            if tup is None or len(tup) == 0:
                 # 无记录
-                tup = (0, 0, 0, 0, None)
+                tup = (0, 0, 0, 0, None, 0)
             return tup
 
 
@@ -1105,7 +1129,7 @@ class DetailThread(threading.Thread):
 
 if __name__ == '__main__':
     laun = Launcher()
-    laun.add_keyword()
+    # laun.refresh_keyword()
     try:
         laun.launch_spider(False)
     #     TODO:未联网时解决方法

@@ -267,11 +267,20 @@ class Item:
 
 
 class Keyword:
+    __weight = 0
     __keyword = ''
     __update_time = -1
 
     def __init__(self) -> None:
         super().__init__()
+
+    @property
+    def weight(self) -> int:
+        return self.__weight
+
+    @weight.setter
+    def weight(self, value: int):
+        self.__weight = value
 
     @property
     def keyword(self) -> str:
@@ -294,4 +303,5 @@ class Keyword:
         self.__update_time = float(value)
 
     def __str__(self) -> str:
-        return '[keyword]:' + self.keyword + '\n[update time]:' + self.update_time.__str__()
+        return '[keyword]:' + self.keyword + '\n[weight]:' + str(self.__weight) \
+               + '\n[update time]:' + self.update_time.__str__()

@@ -7,10 +7,12 @@ CREATE TABLE last_running_state(
     begin_date DOUBLE NOT NULL,
     stop_date DOUBLE NOT NULL,
     ec_code INT, -- code==1 means JD, code==2 means TMall --
-    keyword varchar(250)
+    keyword varchar(250),
+    page_position INT -- record the kw position
 ) default charset =  utf8;
 
 CREATE TABLE keyword(
+    weight int NOT NULL, -- 关键词权重 --
 	keyword VARCHAR(250) PRIMARY KEY, -- 搜索关键词 --
 	update_time DOUBLE NOT NULL	-- 该关键词更新日期 --
 ) default charset = utf8;

@@ -36,7 +36,8 @@ public class DBHelper {
 			dbName = br.readLine();
 			br.close();
 		} catch (FileNotFoundException e1) {
-			//TODO: report to admin
+			LinkAdministrator la = new LinkAdministrator();
+			la.sendMessage("Mysql Info not found", "At server mysql.txt not found");
 			e1.printStackTrace();
 		} catch (IOException e) {
 			e.printStackTrace();

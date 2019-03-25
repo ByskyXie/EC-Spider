@@ -51,7 +51,7 @@ public class PopupServlet extends HttpServlet {
 		response.setHeader("Access-Control-Allow-Origin","*");//跨域访问
 		String itemUrl = request.getParameter("item_url");//直接访问用
 		String json = request.getParameter("json");//插件用
-		System.out.println("++++++++++++++++++++++++++Get request:"+json);
+		System.out.println("+++++++++++++++++++Get request:"+json);
 		try {
 			ResultSet rs = null;
 			if(itemUrl != null && itemUrl.length()!=0) {
@@ -78,7 +78,7 @@ public class PopupServlet extends HttpServlet {
 				
 		} catch (SQLException e) {
 			e.printStackTrace();
-			pw.append("");  //TODO:显示错误
+			pw.append("Server failed");
 			return;
 		}
 		pw.close();

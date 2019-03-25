@@ -535,12 +535,12 @@ class JdListPageReader:
             return goods_list  # 判断是否是详情页
         goods_dom_list = self.get_goods_list(browser)
         for goods_dom in goods_dom_list:
-            # 读取单个commodity，查看是否符合销量限制
-            remark = self.get_sales_amount(goods_dom)
-            if remark < self.jd_sales_amount_limit:
-                logging.info("[销量太低不予记录商品]：", goods_dom.text)
-                continue
             try:
+                # 读取单个commodity，查看是否符合销量限制
+                remark = self.get_sales_amount(goods_dom)
+                if remark < self.jd_sales_amount_limit:
+                    logging.info("[销量太低不予记录商品]：", goods_dom.text)
+                    continue
                 # 读取
                 comm = self.read_single_goods_commodity(goods_dom)
                 if comm is None:
@@ -972,7 +972,7 @@ class DatabaseHelper:
             return True
         return False
 
-    def is_item_price_changed(self, item: Item, if_changed_update_end_time: bool = False) -> bool:
+    def is_item_price_changed(self, item: Item, weather_changed_update_end_time: bool = False) -> bool:
         """
         method:
             Judge current price whether changed. In the other words, is the least record price equals item.price
@@ -995,7 +995,7 @@ class DatabaseHelper:
             if item.price == row[5]:
                 return False
             logging.info("[Price changed]:", item.price, "!=", row[5])
-            if if_changed_update_end_time:
+            if weather_changed_update_end_time:
                 # 更新该记录结束时间
                 cursor.execute(self.__sql_update_item_end_time % (
                     item.data_begin_time, item.item_url_md5, Item.CURRENT_CODE))

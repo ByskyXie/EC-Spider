@@ -46,8 +46,7 @@ function getData(url){
         if(xhr.readyState == xhr.DONE){
             if(xhr.status == 200){
                 setData(xhr.responseText);
-            }
-            else
+            }else
                 setContent("Code:"+xhr.status);
         }
     }

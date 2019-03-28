@@ -37,6 +37,10 @@ public class PopupServlet extends HttpServlet {
 			+ "WHERE item_url_md5='%s' AND data_begin_time>%f "
 			+ "ORDER BY data_begin_time ASC;";
 
+	private static final String SQL_INCREACE_ACCESS = ""
+			+ "UPDATE commodity "
+			+ "SET access_num = access_num+1"
+			+ "WHERE item_url_md5='%s'; ";
 	
     public PopupServlet() {
     	super();
@@ -57,12 +61,14 @@ public class PopupServlet extends HttpServlet {
 			if(itemUrl != null && itemUrl.length()!=0) {
 				rs = helper.execute(String.format(SQL_QUERY, 
 						getMD5(itemUrl), (double)(new Date().getTime()/1000 - LIMITSECOND)));
+				increaseAccessNum(itemUrl);
 				//调取半年内的数据
 				pw.append(produceChart(rs));
 				rs.close();
 			}else if(json!=null && json.length()!=0){
 				rs = helper.execute(String.format(SQL_QUERY, 
 						getMD5(json), (double)(new Date().getTime()/1000 - LIMITSECOND)));
+				increaseAccessNum(itemUrl);
 				//调取半年内的数据
 				rs.last();
 				int num = rs.getRow();
@@ -94,6 +100,11 @@ public class PopupServlet extends HttpServlet {
 	public void destroy() {
 		super.destroy();
 		helper.close();
+	}
+	
+	private void increaseAccessNum(String item_url) throws SQLException {
+		String md5 = getMD5(item_url);
+		helper.execute(String.format(SQL_INCREACE_ACCESS, md5));
 	}
 	
 	private String produceChart(ResultSet rs) {

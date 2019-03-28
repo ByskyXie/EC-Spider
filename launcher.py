@@ -33,13 +33,14 @@ class Launcher:
     CODE_JD = 1  # use in database table last_running_state.
     CODE_TMall = 2
 
-    __jd_max_turn_page_amount = 20  # 对于某个关键字最大翻页次数
-    __jd_max_wait_time = 20  # 网页加载最大等待时间
+    __JD_PAGE_ACCORD_ITEMS_LIMIT = 20  # 每页最少符合读取要求的商品数，少于则停止记录该关键词
+    __JD_MAX_TURN_PAGE_AMOUNT = 20  # 对于某个关键字最大翻页次数
+    __JD_MAX_WAIT_TIME = 20  # 网页加载最大等待时间
+    __ROUND_MAX_DURATION = 24*60*60  # 一轮最大可接受时间
+    __JD_MAX_DURATION = __ROUND_MAX_DURATION * 1  # 京东的时间配额
+    __TB_MAX_DURATION = __ROUND_MAX_DURATION * 0
     __jd_no_result_str = "没有找到"  # 无结果页面关键字
     __round_begin_time = time.time()  # 一轮爬虫开始时间
-    __round_max_duration = 24*60*60  # 一轮最大可接受时间
-    __jd_max_duration = __round_max_duration * 1  # 京东的时间配额
-    __tb_max_duration = __round_max_duration * 0
 
     __thread_pool = []  # 线程池
     __pre_state = None
@@ -90,7 +91,7 @@ class Launcher:
             self.output_spider_state()
             if not auto_mode:
                 break
-            blank_time = self.__round_max_duration - time.time() + self.__round_begin_time
+            blank_time = self.__ROUND_MAX_DURATION - time.time() + self.__round_begin_time
             if blank_time > 0:
                 # 说明超前完成任务
                 time.sleep(blank_time)
@@ -149,7 +150,7 @@ class Launcher:
         position = 0
         jd_begin_time = time.time()
         jlpr = JdListPageReader()
-        wdw = WebDriverWait(browser, self.__jd_max_wait_time, 0.7)
+        wdw = WebDriverWait(browser, self.__JD_MAX_WAIT_TIME, 0.7)
         #############
         try:
             browser.get('http://www.jd.com')
@@ -186,11 +187,10 @@ class Launcher:
                 browser.refresh()
                 logging.error("Launcher.access_jd() :Button can't click.")
                 continue
-            while page_num <= self.__jd_max_turn_page_amount:
-                #TODO:根据已读取记录决定是否继续
+            while page_num <= self.__JD_MAX_TURN_PAGE_AMOUNT:
                 try:  # 最外层的try except 用于捕获断点
 
-                    if self.__jd_max_duration * position / len(kw_list) < (time.time() - jd_begin_time):
+                    if self.__JD_MAX_DURATION * position / len(kw_list) < (time.time() - jd_begin_time):
                         # 控制进度。说明该kw超时了，以后的页面不再读取
                         logging.info('[Single keyword running timeout]:' + kw + ' page:' + str(page_num))
                         break
@@ -226,7 +226,12 @@ class Launcher:
                     # 读取价格信息并更新
                     try:
                         self.__helper.insert_commodities(jlpr.read_commodities(browser, kw))
-                        self.__helper.insert_items(jlpr.read_items(browser))
+                        items = jlpr.read_items(browser)
+                        self.__helper.insert_items(items)
+                        if len(items) < self.__JD_PAGE_ACCORD_ITEMS_LIMIT:
+                            # 根据已读取记录决定是否继续
+                            logging.warning("List page accord with limit items too little:"+str(len(items)))
+                            break
                     except StaleElementReferenceException:
                         browser.refresh()
                         logging.warning("Launcher.access_jd(): Not stable." + (traceback.print_exc() or "None"))
@@ -250,7 +255,7 @@ class Launcher:
         return 0
 
     def get_time_spent_percent(self) -> float:
-        return (time.time() - self.__round_begin_time)/self.__round_max_duration
+        return (time.time() - self.__round_begin_time)/self.__ROUND_MAX_DURATION
 
     def output_spider_state(self):
         with open('spiderState.txt', 'w') as output_file:
@@ -267,7 +272,7 @@ class Launcher:
             out_str = '[Spider time spent]:' + \
                       ('%d:%d:%d' % (time_spent/3600, time_spent/60 % 60, time_spent % 60))
             output_file.writelines(out_str)
-            output_file.writelines('[Max Allow Duration]:' + str(self.__round_max_duration))
+            output_file.writelines('[Max Allow Duration]:' + str(self.__ROUND_MAX_DURATION))
 
     def add_keyword(self):
         with open("keywords.txt", encoding='UTF-8') as kwf:
@@ -475,8 +480,9 @@ class JdDetailPageReader:
 
 
 class JdListPageReader:
-    __jd_list_page_goods_list_amount = 60  # TODO：后期可以通过读取加载完成页面的实际显示数量动态调整
-    __jd_sales_amount_limit = 100  # 高于该销量的商品才记录，这个销量是否作为低门槛好一些？因为搜索的话电商网站已经优化过了
+
+    __JD_LIST_PAGE_GOODS_LIST_AMOUNT = 60  # TODO：后期可以通过读取加载完成页面的实际显示数量动态调整
+    __JD_SALES_AMOUNT_LIMIT = 100  # 高于该销量的商品才记录，这个销量是否作为低门槛好一些？因为搜索的话电商网站已经优化过了
     # 商品属性对应xpath 考虑优先从外部文本文件读入，方便服务器端维护
     __jd_list_page_detect = "//div[@id=\'J_main\']//div[@id=\'J_goodsList\']"
     __jd_list_page_goods_list_xpath = "//div[@id=\'J_goodsList\']/ul/*"  # 搜索结果商品列表DOM SET
@@ -497,11 +503,11 @@ class JdListPageReader:
 
     @property
     def jd_list_page_goods_list_amount(self):
-        return self.__jd_list_page_goods_list_amount
+        return self.__JD_LIST_PAGE_GOODS_LIST_AMOUNT
 
     @property
     def jd_sales_amount_limit(self):
-        return self.__jd_sales_amount_limit
+        return self.__JD_SALES_AMOUNT_LIMIT
 
     @property
     def jd_search_view_id(self):
@@ -577,12 +583,12 @@ class JdListPageReader:
             return item_list  # 判断是否是详情页
         goods_dom_list = self.get_goods_list(browser)
         for goods_dom in goods_dom_list:
-            # 读取单个commodity，查看是否符合销量限制
-            remark = self.get_sales_amount(goods_dom)
-            if remark < self.jd_sales_amount_limit:
-                logging.info("[销量太低不予记录数据]：", goods_dom.text)
-                continue
             try:
+                # 读取单个commodity，查看是否符合销量限制
+                remark = self.get_sales_amount(goods_dom)
+                if remark < self.jd_sales_amount_limit:
+                    logging.info("[销量太低不予记录数据]：", goods_dom.text)
+                    continue
                 # 读取单个item
                 item = self.read_single_goods_item(goods_dom)
                 if item is not None:
@@ -706,6 +712,7 @@ class JdListPageReader:
 
 
 class DatabaseHelper:
+
     __sql_insert_commodity = \
         "INSERT INTO COMMODITY(item_url_md5,item_url, item_title," \
         "item_name, item_type, keyword, store_name, store_url, access_num) " \
@@ -1128,7 +1135,7 @@ class DetailThread(threading.Thread):
 
 
 if __name__ == '__main__':
-    laun = Launcher()
+    laun = Launcher() 
     # laun.refresh_keyword()
     try:
         laun.launch_spider(False)

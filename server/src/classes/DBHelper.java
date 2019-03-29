@@ -56,7 +56,7 @@ public class DBHelper {
 		
 	}
 	
-	public ResultSet execute(String sql) throws SQLException {
+	public ResultSet executeQuery(String sql) throws SQLException {
 		ResultSet rs = null;
 		try {
 			pst = conn.prepareStatement(sql);
@@ -71,6 +71,22 @@ public class DBHelper {
 			rs = pst.executeQuery();
 		}
 		return rs;
+	}
+	
+	public void execute(String sql) throws SQLException {
+		ResultSet rs = null;
+		try {
+			pst = conn.prepareStatement(sql);
+			pst.execute();
+		}catch(java.sql.SQLNonTransientConnectionException ntc) {
+			initial(); //Long time not use connection maybe close.
+			pst = conn.prepareStatement(sql);
+			rs = pst.executeQuery();
+		}catch(com.mysql.cj.jdbc.exceptions.CommunicationsException ce) {
+			initial();
+			pst = conn.prepareStatement(sql);
+			rs = pst.executeQuery();
+		}
 	}
 	
 	public void close() {

@@ -230,7 +230,8 @@ class Launcher:
                         self.__helper.insert_items(items)
                         if len(items) < self.__JD_PAGE_ACCORD_ITEMS_LIMIT:
                             # 根据已读取记录决定是否继续
-                            logging.warning("List page accord with limit items too little:"+str(len(items)))
+                            logging.warning("List page accord with limit items too little:"
+                                            + str(len(items))+"\nKeyword:"+kw+" Current Page:"+str(page_num))
                             break
                     except StaleElementReferenceException:
                         browser.refresh()
